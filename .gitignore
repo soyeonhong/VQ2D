@@ -1,0 +1,17 @@
+/wandb
+/output*
+/log
+/data
+/visualization
+*.json
+*.log
+*.pth
+*.out 
+*.err
+*.pth
+/.vscode
+/slurm
+/notebooks
+*.pyc
+/__pychache__
+*.pth.tar
