@@ -12,9 +12,9 @@ seed: 42
 dataset:
   name: 'ego4d_vq2d'
   name_val: 'ego4d_vq2d'
-  query_size: 448
-  clip_size_fine: 448
-  clip_size_coarse: 448
+  query_size: 224
+  clip_size_fine: 224
+  clip_size_coarse: 224
   clip_num_frames: 30
   clip_num_frames_val: 30
   clip_sampling: 'rand'
@@ -30,13 +30,13 @@ dataset:
 
 # model config
 model:
-  backbone_name: 'dinov2'
-  backbone_type: 'vitb14'
+  backbone_name: 'CLIP_text'
+  backbone_type: 'ViT-B/32'
   bakcbone_use_mae_weight: False
   fix_backbone: True
   num_transformer: 3
   type_transformer: 'global'
-  resolution_transformer: 8
+  resolution_transformer: 4
   resolution_anchor_feat: 16
   pe_transformer: 'zero'
   window_transformer: 5
@@ -57,7 +57,6 @@ train:
   resume: False
   batch_size: 3
   total_iteration: 60000
-  total_epoch: 100
   lr: 0.0003
   weight_decay: 0.005
   schedualr_milestones: [7000, 14000, 20000, 25000]

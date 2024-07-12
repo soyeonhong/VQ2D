@@ -27,7 +27,7 @@ class Task:
             (annot["metadata"]["annotation_uid"], annot["metadata"]["query_set"])
             for annot in self.annots
         ]
-        self.clip_dir = '/data2/local_datasets/ego4d_data/v2/vq2d_clips'
+        self.clip_dir = config.dataset.clip_dir
 
     def run(self, model, config, device):
         clip_uid = self.annots[0]["clip_uid"]

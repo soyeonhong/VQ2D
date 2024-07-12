@@ -21,6 +21,8 @@ n_aspect_ratios = aspect_ratios.shape[0]
 
 def build_backbone(config):
     name, type = config.model.backbone_name, config.model.backbone_type
+    if config.dataset.hub_dir != '/your_hub_path/':
+        torch.hub.set_dir(config.dataset.hub_dir)
     if name == 'dino':
         assert type in ['vitb8', 'vitb16', 'vits8', 'vits16']
         backbone = torch.hub.load('facebookresearch/dino:main', 'dino_{}'.format(type))
@@ -44,6 +46,11 @@ def build_backbone(config):
         down_rate = 16
         backbone_dim = 768
     elif name == 'CLIP':
+        backbone, _ = clip.load(type, device='cuda') 
+        backbone_dim = 768
+        # down_rate = int(type.replace('ViT-B/', ''))
+        down_rate = 14
+    elif name == 'CLIP_text':
         backbone, _ = clip.load(type, device='cuda') 
         backbone_dim = 768
         # down_rate = int(type.replace('ViT-B/', ''))

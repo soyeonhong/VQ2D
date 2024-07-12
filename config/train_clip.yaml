@@ -23,6 +23,10 @@ dataset:
   frame_interval: 1
   query_square: True
   padding_value: 'zero' # ['mean', 'zero']
+  hub_dir: '/data/joohyun7u/project/VQ2D/data'
+  data_dir: '/local_datasets/ego4d_data/v2/vq2d_images'
+  clip_dir: '/local_datasets/ego4d_data/v2/vq2d_clips'
+  meta_dir: '/data/joohyun7u/project/VQ2D/data'
 
 # model config
 model:

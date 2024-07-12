@@ -22,6 +22,10 @@ dataset:
   query_padding: False
   query_square: True
   padding_value: 'mean' # ['mean', 'zero']
+  hub_dir: '/data/joohyun7u/project/VQ2D/data'
+  data_dir: '/local_datasets/ego4d_data/v2/vq2d_images'
+  clip_dir: '/local_datasets/ego4d_data/v2/vq2d_clips'
+  meta_dir: '/data/joohyun7u/project/VQ2D/data'
 
 # model config
 model:
@@ -36,7 +40,8 @@ model:
   pe_transformer: 'zero'
   window_transformer: 5
   positive_threshold: 0.3
-  cpt_path: '/data/soyeonhong/vq2d/VQLoC/cpt_best_prob.pth.tar'
+  cpt_path: '/data/joohyun7u/project/VQLoC/output/ego4d_vq2d/train/train/cpt_best_prob.pth.tar'
+  # cpt_path: '/data/joohyun7u/project/VQLoC/cpt_best_prob.pth.tar'
 
 # loss config
 loss:

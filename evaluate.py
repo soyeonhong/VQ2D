@@ -147,7 +147,7 @@ def evaluate(gt_file, pred_file):
         for k, v in metrics.items():
             print(f"{k:<20s} | {v:>10.3f}")
 
-def evaluate2(gt_file, pred_file):
+def evaluate2(gt_file, pred_file, train_file):
     print("Starting Evaluation.....")
 
     with open(gt_file, "r") as fp:
@@ -155,7 +155,7 @@ def evaluate2(gt_file, pred_file):
     with open(pred_file, "r") as fp:
         model_predictions = json.load(fp)
         
-    train_object = json.loads(Path('/data/soyeonhong/vq2d/VQLoC/object_class.json').read_text())
+    train_object = json.loads(Path(train_file).read_text())
     train_object = train_object['train']
 
     # Validate model predictions
@@ -235,9 +235,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt-file", required=False, type=str, default='/vision/hwjiang/episodic-memory/VQ2D/data/vq_val.json')
     parser.add_argument("--pred-file", required=False, type=str, default='/WRITE_YOUR_PATH_HERE/inference_cache_val_results.json.gz')
+    parser.add_argument("--train-file", required=False, type=str, default='/WRITE_YOUR_PATH_HERE/object_class.json')
     parser.add_argument("--eval", dest="eval", action="store_true", help="evaluate model")
     args = parser.parse_args()
     if args.eval:
         args.gt_file = args.gt_file.replace('vq_val.json', 'vq_test_unannotated.json')
 
     evaluate(args.gt_file, args.pred_file)
+    if args.train_file != '/WRITE_YOUR_PATH_HERE/object_class.json':
+        evaluate2(args.gt_file, args.pred_file, args.train_file)

@@ -82,7 +82,7 @@ class QueryVideoDataset(Dataset):
             
 
     def _load_metadata(self):
-        anno_processed_path = os.path.join('/data/soyeonhong/vq2d/VQLoC/data', '{}_anno_new.json'.format(self.split))
+        anno_processed_path = os.path.join(self.meta_dir, '{}_anno_new.json'.format(self.split))
         if os.path.isfile(anno_processed_path):
             with open(anno_processed_path, 'r') as f:
                 self.annotations = json.load(f)

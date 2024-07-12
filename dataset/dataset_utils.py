@@ -50,7 +50,10 @@ def get_dataset(config, split='train'):
             clip_params=clip_params,
             config = config,
             split=split,
-            clip_reader=clip_reader
+            clip_reader=clip_reader,
+            data_dir=config.dataset.data_dir,
+            clip_dir=config.dataset.clip_dir,
+            meta_dir=config.dataset.meta_dir
         )
     elif dataset_name == 'ego4d_egotracks':
         dataset = EgoTracksDataset(
@@ -58,7 +61,10 @@ def get_dataset(config, split='train'):
             query_params=query_params,
             clip_params=clip_params,
             split=split,
-            clip_reader=clip_reader
+            clip_reader=clip_reader,
+            data_dir=config.dataset.data_dir,
+            clip_dir=config.dataset.clip_dir,
+            meta_dir=config.dataset.meta_dir
         )
     return dataset
 

@@ -139,17 +139,19 @@ if __name__ == '__main__':
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     random.seed(config.seed)
+    meta_dir = config.dataset.meta_dir
 
     # mode = 'test_unannotated' if args.eval else 'val'
+    
     if args.window_cheating:
-        annotation_path = os.path.join('/data/soyeonhong/vq2d/VQLoC/cheated_annotation/', 'vq_{}_{}.json'.format(mode, args.window_size))
+        annotation_path = os.path.join(meta_dir,'cheated_annotation/vq_{}_{}.json'.format(mode, args.window_size))
     elif args.gt_query_cheating:
         if args.cheating_type == 'random':
-            annotation_path = '/data/soyeonhong/vq2d/VQLoC/cheated_annotation/vq_val_query_cheating_random.json'
+            annotation_path = os.path.join(meta_dir,'/cheated_annotation/vq_val_query_cheating_random.json')
         else:
-            annotation_path = '/data/soyeonhong/vq2d/VQLoC/cheated_annotation/vq_val_query_cheating_midframe.json'
+            annotation_path = os.path.join(meta_dir,'/cheated_annotation/vq_val_query_cheating_midframe.json')
     else:
-        annotation_path = os.path.join('/data/datasets/ego4d_data/v2/annotations/', 'vq_{}.json'.format(mode))
+        annotation_path = os.path.join(meta_dir, 'vq_{}.json'.format(mode))
     with open(annotation_path) as fp:
         annotations = json.load(fp)
         

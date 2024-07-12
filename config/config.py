@@ -34,6 +34,10 @@ config.dataset.frame_interval = 5
 config.dataset.query_padding = False
 config.dataset.query_square = False
 config.dataset.padding_value = 'zero'
+config.dataset.hub_dir = '/your_hub_path/'
+config.dataset.data_dir = '/your_data_path/'
+config.dataset.clip_dir = '/your_clip_path/'
+config.dataset.meta_dir = '/your_anno_path/'
 
 # model config
 config.model = edict()
@@ -66,6 +70,7 @@ config.train = edict()
 config.train.resume = False
 config.train.batch_size = 4
 config.train.total_iteration = 50000
+config.train.total_epoch = 100
 config.train.lr = 0.001
 config.train.weight_decay = 0.0001
 config.train.schedular_warmup_iter = 1000

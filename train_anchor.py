@@ -38,6 +38,8 @@ def parse_args():
         '--local_rank', default=-1, type=int, help='node rank for distributed training')
     parser.add_argument(
         '--batch_size', default=3, type=int, help='batch size')
+    parser.add_argument(
+        '--lr', default=0.003, type=float, help='learning_rate')
     args, rest = parser.parse_known_args()
     update_config(args.cfg)
     return args
@@ -73,7 +75,7 @@ def main():
             "exp_name": config.exp_name,
             "batch_size": args.batch_size,
             "total_iteration": config.train.total_iteration,
-            "lr": config.train.lr,
+            "lr": args.lr,
             "weight_decay": config.train.weight_decay,
             "loss_weight_bbox_giou": config.loss.weight_bbox_giou,
             "loss_prob_bce_weight": config.loss.prob_bce_weight,
@@ -138,7 +140,8 @@ def main():
                                                drop_last=False)    
  
     start_ep = ep_resume if ep_resume is not None else 0
-    end_ep = 100000000 #int(config.train.total_iteration / len(train_loader)) + 1
+    # end_ep = int(config.train.total_iteration / len(train_loader)) + 1
+    end_ep = int(config.train.total_epoch)
 
     # train
     for epoch in range(start_ep, end_ep):
