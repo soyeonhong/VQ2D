@@ -78,7 +78,7 @@ class QueryVideoDataset(Dataset):
             elif config.model.backbone_type == 'RN50x16':
                 self.trnasofrm = self._transform(384)
             else:
-                self.transform = self._transform(224)
+                self.transform = self._transform(config.dataset.clip_size_fine)
             
 
     def _load_metadata(self):
@@ -365,12 +365,16 @@ class QueryVideoDataset(Dataset):
     def _convert_image_to_rgb(self, image):
         return image.convert("RGB")
 
+    # def _transform(self, n_px):
+    #     return Compose([
+    #         Resize(n_px, interpolation=BICUBIC),
+    #         CenterCrop(n_px),
+    #         self._convert_image_to_rgb,
+    #         ToTensor(),
+    #         Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+    #     ])
     def _transform(self, n_px):
         return Compose([
-            Resize(n_px, interpolation=BICUBIC),
-            CenterCrop(n_px),
-            self._convert_image_to_rgb,
-            ToTensor(),
             Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
     
@@ -438,6 +442,9 @@ class QueryVideoDataset(Dataset):
             results['clip'] = clip.float() # [T,3,H,W]
             results['query'] = query.float() # [3,H2,W2]
             results['query_frame'] = query_frame.float() # [3,H,W]
+        # results['clip'] = clip.float() # [T,3,H,W]
+        # results['query'] = query.float() # [3,H2,W2]
+        # results['query_frame'] = query_frame.float() # [3,H,W]
         
         return results
     

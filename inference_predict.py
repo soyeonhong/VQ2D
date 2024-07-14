@@ -73,7 +73,7 @@ def perform_vq2d_inference(annotations, config, output_dir, args):
     
     cmd = "scontrol show jobid ${SLURM_JOB_ID} | grep -oP '(?<=BatchFlag=)([0-1])'"
     batch_flag = int(os.popen(cmd).read().strip())
-    disable = batch_flag == 1
+    disable = batch_flag == 0
 
     pbar = tqdm.tqdm(
         desc=f"Computing VQ2D predictions",

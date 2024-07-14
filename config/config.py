@@ -43,6 +43,7 @@ config.dataset.meta_dir = '/your_anno_path/'
 config.model = edict()
 config.model.backbone_name = 'dino'
 config.model.backbone_type = 'vitb8'
+config.model.clip_dir = '/your_clip_path/'
 config.model.bakcbone_use_mae_weight = False
 config.model.fix_backbone = True
 config.model.num_transformer = 2

@@ -12,6 +12,7 @@ import torchvision
 from dataset import dataset_utils
 from model.mae import vit_base_patch16
 import clip
+import os
 
 base_sizes=torch.tensor([[16, 16], [32, 32], [64, 64], [128, 128]], dtype=torch.float32)    # 4 types of size
 aspect_ratios=torch.tensor([0.5, 1, 2], dtype=torch.float32)                                # 3 types of aspect ratio
@@ -20,24 +21,24 @@ n_aspect_ratios = aspect_ratios.shape[0]
 
 
 def build_backbone(config):
-    name, type = config.model.backbone_name, config.model.backbone_type
-    if config.dataset.hub_dir != '/your_hub_path/':
+    name, bone_type = config.model.backbone_name, config.model.backbone_type
+    if os.path.isdir(config.dataset.hub_dir):
         torch.hub.set_dir(config.dataset.hub_dir)
     if name == 'dino':
-        assert type in ['vitb8', 'vitb16', 'vits8', 'vits16']
-        backbone = torch.hub.load('facebookresearch/dino:main', 'dino_{}'.format(type))
-        down_rate = int(type.replace('vitb', '').replace('vits', ''))
+        assert bone_type in ['vitb8', 'vitb16', 'vits8', 'vits16']
+        backbone = torch.hub.load('facebookresearch/dino:main', 'dino_{}'.format(bone_type))
+        down_rate = int(bone_type.replace('vitb', '').replace('vits', ''))
         backbone_dim = 768
-        if type == 'vitb16' and config.model.bakcbone_use_mae_weight:
+        if bone_type == 'vitb16' and config.model.bakcbone_use_mae_weight:
             mae_weight = torch.load('/vision/hwjiang/episodic-memory/VQ2D/checkpoint/mae_pretrain_vit_base.pth')['model']
             backbone.load_state_dict(mae_weight)
     elif name == 'dinov2':
-        assert type in ['vits14', 'vitb14', 'vitl14', 'vitg14']
-        backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_{}'.format(type))
+        assert bone_type in ['vits14', 'vitb14', 'vitl14', 'vitg14']
+        backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_{}'.format(bone_type))
         down_rate = 14
-        if type == 'vitb14':
+        if bone_type == 'vitb14':
             backbone_dim = 768
-        elif type == 'vits14':
+        elif bone_type == 'vits14':
             backbone_dim = 384
     elif name == 'mae':
         backbone = vit_base_patch16()
@@ -46,17 +47,54 @@ def build_backbone(config):
         down_rate = 16
         backbone_dim = 768
     elif name == 'CLIP':
-        backbone, _ = clip.load(type, device='cuda') 
+        if os.path.isfile(config.model.clip_dir):
+            backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
+        else:
+            backbone, _ = clip.load(bone_type, device='cuda') 
         backbone_dim = 768
-        # down_rate = int(type.replace('ViT-B/', ''))
-        down_rate = 14
+        down_rate = backbone.visual.conv1.kernel_size[0]
+        idal_patches = (config.dataset.clip_size_fine // down_rate)**2+1
+        if idal_patches != backbone.visual.positional_embedding.shape[0]:
+            backbone.visual.positional_embedding = interpolate_pos_encoding(backbone.visual.positional_embedding, patches=idal_patches, dim= backbone_dim, height=config.dataset.clip_size_fine, width=config.dataset.clip_size_coarse, patch_size=backbone.visual.conv1.kernel_size)
     elif name == 'CLIP_text':
-        backbone, _ = clip.load(type, device='cuda') 
+        backbone, _ = clip.load(bone_type, device='cuda') 
         backbone_dim = 768
-        # down_rate = int(type.replace('ViT-B/', ''))
+        # down_rate = int(bone_type.replace('ViT-B/', ''))
         down_rate = 14
 
     return backbone, down_rate, backbone_dim
+
+def interpolate_pos_encoding(positional_embedding, patches: int, dim: int, height: int, width: int, patch_size) -> torch.Tensor:
+    """
+    This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
+    resolution images.
+    Source:
+    https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
+    """
+
+    num_patches = patches - 1
+    pos_embedding = positional_embedding.unsqueeze(0)
+    num_positions = pos_embedding.shape[1] - 1
+    class_pos_embed = pos_embedding[:, 0]
+    patch_pos_embed = pos_embedding[:, 1:]
+    h0 = height // patch_size[0]
+    w0 = width // patch_size[1]
+    # we add a small number to avoid floating point error in the interpolation
+    # see discussion at https://github.com/facebookresearch/dino/issues/8
+    h0, w0 = h0 + 0.1, w0 + 0.1
+    patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
+    patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
+    patch_pos_embed = nn.functional.interpolate(
+        patch_pos_embed,
+        scale_factor=(h0 / math.sqrt(num_positions), w0 / math.sqrt(num_positions)),
+        mode="bicubic",
+        align_corners=False,
+    )
+    assert int(h0) == patch_pos_embed.shape[-2] and int(w0) == patch_pos_embed.shape[-1]
+    patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
+    output = torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
+
+    return torch.nn.Parameter(output.squeeze(0)).to(positional_embedding.device)
 
 
 class ClipMatcher(nn.Module):
