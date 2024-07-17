@@ -22,6 +22,7 @@ config.debug = False
 config.dataset = edict()
 config.dataset.name = 'ego4d_vq2d'
 config.dataset.name_val = 'ego4d_vq2d'
+config.dataset.query_type = 'image'  # [image, text, both]
 config.dataset.query_size = 256
 config.dataset.clip_size_fine = 256
 config.dataset.clip_size_coarse = 256
@@ -41,6 +42,7 @@ config.dataset.meta_dir = '/your_anno_path/'
 
 # model config
 config.model = edict()
+config.model.CQ_after_reduce = False
 config.model.backbone_name = 'dino'
 config.model.backbone_type = 'vitb8'
 config.model.clip_dir = '/your_clip_path/'

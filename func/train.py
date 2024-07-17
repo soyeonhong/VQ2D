@@ -35,9 +35,9 @@ def train_epoch(config, loader, model, optimizer, schedular, scaler, epoch, outp
         end = time.time()
 
         # reconstruction loss
-        clips, queries = sample['clip'], sample['query']
+        clips, queries, query_texts = sample['clip'], sample['query'], sample['query_text']
         #with autocast():
-        preds = model(clips, queries, fix_backbone=config.model.fix_backbone)
+        preds = model(clips, queries, query_texts, fix_backbone=config.model.fix_backbone)
         time_meters.add_loss_value('Prediction time', time.time() - end)
         end = time.time()
 
@@ -113,8 +113,8 @@ def validate(config, loader, model, epoch, output_dir, device, rank, wandb_run=N
             sample = exp_utils.dict_to_cuda(sample)
             sample = dataset_utils.process_data(config, sample, split='val', device=device)     # normalize and data augmentations on GPU
 
-            clips, queries = sample['clip'], sample['query']
-            preds = model(clips, queries, fix_backbone=config.model.fix_backbone)
+            clips, queries, query_texts = sample['clip'], sample['query'], sample['query_text']
+            preds = model(clips, queries, query_texts, fix_backbone=config.model.fix_backbone)
             results = val_performance(config, preds, sample)
             try:
                 for k, v in results.items():

@@ -76,11 +76,11 @@ def get_losses_with_anchor(config, preds, gts):
         giou = torch.tensor(0.).cuda()
 
     # anchor box occurance loss
-    # if config.train.use_hnm:
-    #     loss_prob = BCELogitsLoss_with_HNM(pred_prob, gt_prob, positive, gt_before_query, config.loss.prob_bce_weight)
-    #     pred_prob = rearrange(pred_prob, 'b t N -> (b t N)')
-    # else:
-    pred_prob = rearrange(pred_prob, 'b t N -> (b t N)')
+    if config.train.use_hnm:
+        loss_prob = BCELogitsLoss_with_HNM(pred_prob, gt_prob, positive, gt_before_query, config.loss.prob_bce_weight)
+        pred_prob = rearrange(pred_prob, 'b t N -> (b t N)')
+    else:
+        pred_prob = rearrange(pred_prob, 'b t N -> (b t N)')
     gt_before_query_replicate = rearrange(gt_before_query.unsqueeze(2).repeat(1,1,N), 'b t N -> (b t N)')
     loss_prob = focal_loss(pred_prob[gt_before_query_replicate.bool()].float(),
                         positive[gt_before_query_replicate.bool()].float())

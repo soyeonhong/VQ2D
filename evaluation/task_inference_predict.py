@@ -46,6 +46,7 @@ class Task:
             query_set = annot["metadata"]["query_set"]
             annot_key = f"{annotation_uid}_{query_set}"
             query_frame = annot["query_frame"]
+            query_text = annot["object_title"]
             visual_crop = annot["visual_crop"]
             save_path = os.path.join(self.output_dir, f'{annot_key}.pt')
             
@@ -63,6 +64,7 @@ class Task:
                                                     clip_path,
                                                     clip_reader, 
                                                     query_frame, 
+                                                    query_text,
                                                     visual_crop,
                                                     os.path.join(self.config.inference_cache_path, annot_key),
                                                     device,
@@ -73,7 +75,7 @@ class Task:
                          'ret_scores': ret_scores}
             torch.save(save_dict, save_path)
             
-def inference_video(config, model, clip_path, clip_reader, query_frame, visual_crop, save_path, device, start_frame, end_frame):
+def inference_video(config, model, clip_path, clip_reader, query_frame, query_texts, visual_crop, save_path, device, start_frame, end_frame):
     '''
     Perform VQ2D inference:
         1. Load the query crop and clip
@@ -157,7 +159,7 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, visual_c
 
         # inference
         with torch.no_grad():
-            preds = model(clips, queries, fix_backbone=config.model.fix_backbone)
+            preds = model(clips, queries, query_texts, fix_backbone=config.model.fix_backbone)
         preds_top = get_top_predictions(config, preds, num_frames, oshape)
         ret_bboxes.append(preds_top['bbox'])
         ret_scores.append(preds_top['prob'])

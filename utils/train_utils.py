@@ -31,6 +31,18 @@ def get_schedular(config, optimizer):
     schedular = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
     return schedular
 
+def text_collate_fn(batch):
+    batch = list(filter(lambda x: x is not None, batch))
+    collated_batch = {}
+
+    for key in batch[0].keys():
+        if key == 'query_text':
+            collated_batch[key] = [d[key] for d in batch]
+        else:
+            collated_batch[key] = torch.stack([d[key] for d in batch], dim=0)
+
+    return collated_batch
+
 
 def set_model_train(config, model, ddp):
     model.train()

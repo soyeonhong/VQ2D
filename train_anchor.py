@@ -130,14 +130,16 @@ def main():
                                                num_workers=int(config.workers), 
                                                pin_memory=True, 
                                                drop_last=True,
-                                               sampler=train_sampler)
+                                               sampler=train_sampler,
+                                               collate_fn=train_utils.text_collate_fn)
     val_data = dataset_utils.get_dataset(config, split='val')
     val_loader = torch.utils.data.DataLoader(val_data,
                                                batch_size=args.batch_size, 
                                                shuffle=False,
                                                num_workers=int(config.workers), 
                                                pin_memory=True, 
-                                               drop_last=False)    
+                                               drop_last=False,
+                                               collate_fn=train_utils.text_collate_fn)    
  
     start_ep = ep_resume if ep_resume is not None else 0
     # end_ep = int(config.train.total_iteration / len(train_loader)) + 1

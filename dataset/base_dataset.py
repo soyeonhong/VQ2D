@@ -409,6 +409,9 @@ class QueryVideoDataset(Dataset):
         except Exception as e:
                 raise ValueError(
                     f'Clip loading failed for {clip_path}, clip loading for this dataset is strict.') from e
+                
+        # load query text
+        query_text = sample['object_title']
         
         # load clip bounding box
         clip_with_bbox, clip_bbox = self._get_clip_bbox(sample, clip_idxs)
@@ -433,18 +436,19 @@ class QueryVideoDataset(Dataset):
             'query_frame_bbox': query_frame_bbox.float()    # [4]
         }
         
-        if self.config.model.backbone_name == 'CLIP':
-            results['clip'] = torch.stack([self.transform(to_pil_image(it)) for it in clip])
-            results['query'] = self.transform(to_pil_image(query))
-            results['query_frame'] = self.transform(to_pil_image(query_frame))
+        # if self.config.model.backbone_name == 'CLIP':
+        #     results['clip'] = torch.stack([self.transform(it) for it in clip])
+        #     results['query'] = self.transform(query)
+        #     results['query_frame'] = self.transform(query_frame)
         
-        else:
-            results['clip'] = clip.float() # [T,3,H,W]
-            results['query'] = query.float() # [3,H2,W2]
-            results['query_frame'] = query_frame.float() # [3,H,W]
-        # results['clip'] = clip.float() # [T,3,H,W]
-        # results['query'] = query.float() # [3,H2,W2]
-        # results['query_frame'] = query_frame.float() # [3,H,W]
+        # else:
+        #     results['clip'] = clip.float() # [T,3,H,W]
+        #     results['query'] = query.float() # [3,H2,W2]
+        #     results['query_frame'] = query_frame.float() # [3,H,W]
+        results['clip'] = clip.float() # [T,3,H,W]
+        results['query'] = query.float() # [3,H2,W2]
+        results['query_text'] = query_text # Text string
+        results['query_frame'] = query_frame.float() # [3,H,W]
         
         return results
     
