@@ -27,6 +27,7 @@ def convert_annotations_to_clipwise_list(annotations, window_cheating):
                         "clip_uid": cuid,
                         "query_frame": q["query_frame"],
                         "visual_crop": q["visual_crop"],
+                        "object_title": q["object_title"],
                     }
    
                     if window_cheating:

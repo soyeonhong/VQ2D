@@ -360,41 +360,29 @@ class ClipMatcher(nn.Module):
             roi_bbox = torch.cat([idx_tensor, query_frame_bbox], dim=1)
             query_feat = torchvision.ops.roi_align(query_feat, roi_bbox, (h,w))
 
+        all_feat = torch.cat([query_feat, clip_feat], dim=0)
+        
+        if self.config.model.backbone_name in ['CLIP', 'CLIP_text']:
+            all_feat = all_feat.float()
         if not self.CQ_after_reduce:
             # reduce channel size
-            all_feat = torch.cat([query_feat, clip_feat], dim=0)
-            
-            if self.config.model.backbone_name in ['CLIP', 'CLIP_text']:
-                all_feat = all_feat.float()
             all_feat = self.reduce(all_feat)
-            query_feat, clip_feat = all_feat.split([b, b*t], dim=0)
+        query_feat, clip_feat = all_feat.split([b, b*t], dim=0)
 
-            if self.config.train.use_hnm and training:
-                clip_feat, query_feat = self.replicate_for_hnm(query_feat, clip_feat)   # b -> b^2
-                b = b**2
-            
-            # find spatial correspondence between query-frame
-            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')  # [b*t,n,c]
-            clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                         # [b*t,n,c]
-        else:
-            all_feat = torch.cat([query_feat, clip_feat], dim=0)
-            if self.config.model.backbone_name in ['CLIP', 'CLIP_text']:
-                all_feat = all_feat.float()
-            query_feat, clip_feat = all_feat.split([b, b*t], dim=0)
-
-            if self.config.train.use_hnm and training:
-                clip_feat, query_feat = self.replicate_for_hnm(query_feat, clip_feat)   # b -> b^2
-                b = b**2
-            
-            # find spatial correspondence between query-frame
-            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')  # [b*t,n,c]
-            clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                         # [b*t,n,c]
-            
-            # spatial correspondence
-            for layer in self.CQ_corr_transformer:
-                clip_feat = layer(clip_feat, query_feat)                                                     # [b*t,n,c]
-            clip_feat = rearrange(clip_feat, 'b (h w) c -> b c h w', h=h, w=w)                               # [b*t,c,h,w] # [90, 256, 32, 32]
-            
+        if self.config.train.use_hnm and training:
+            clip_feat, query_feat = self.replicate_for_hnm(query_feat, clip_feat)   # b -> b^2
+            b = b**2
+        
+        # find spatial correspondence between query-frame
+        query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')  # [b*t,n,c]
+        clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                         # [b*t,n,c]
+        
+        # spatial correspondence
+        for layer in self.CQ_corr_transformer:
+            clip_feat = layer(clip_feat, query_feat)                                                     # [b*t,n,c]
+        clip_feat = rearrange(clip_feat, 'b (h w) c -> b c h w', h=h, w=w)                               # [b*t,c,h,w] # [90, 256, 32, 32]
+        
+        if self.CQ_after_reduce:
             # reduce channel size
             clip_feat = self.reduce(clip_feat)
 
