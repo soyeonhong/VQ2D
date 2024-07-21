@@ -383,6 +383,10 @@ class QueryVideoDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.annotations[idx]
+        if sample['object_title'] == None:
+            import sys, random
+            print(f"An error object_title is None : {sample}", file=sys.stdout, flush=True)
+            sample = self.annotations[random.randint(0,len(self.annotations))]
         # video_path = self._get_video_path(sample)
         query_path = self._get_query_path(sample)
         clip_path = self._get_clip_path(sample)
@@ -448,6 +452,7 @@ class QueryVideoDataset(Dataset):
         results['clip'] = clip.float() # [T,3,H,W]
         results['query'] = query.float() # [3,H2,W2]
         results['query_text'] = query_text # Text string
+        results['clip_uid'] = sample['clip_uid']
         results['query_frame'] = query_frame.float() # [3,H,W]
         
         return results

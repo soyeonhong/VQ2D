@@ -36,7 +36,7 @@ def text_collate_fn(batch):
     collated_batch = {}
 
     for key in batch[0].keys():
-        if key == 'query_text':
+        if key in ['query_text','clip_uid']:
             collated_batch[key] = [d[key] for d in batch]
         else:
             collated_batch[key] = torch.stack([d[key] for d in batch], dim=0)

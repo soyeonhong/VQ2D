@@ -22,7 +22,6 @@ config.debug = False
 config.dataset = edict()
 config.dataset.name = 'ego4d_vq2d'
 config.dataset.name_val = 'ego4d_vq2d'
-config.dataset.query_type = 'image'  # [image, text, both]
 config.dataset.query_size = 256
 config.dataset.clip_size_fine = 256
 config.dataset.clip_size_coarse = 256
@@ -45,6 +44,8 @@ config.model = edict()
 config.model.CQ_after_reduce = False
 config.model.backbone_name = 'dino'
 config.model.backbone_type = 'vitb8'
+config.model.query_type = 'image'  # [image, text, both]
+config.model.text_backbone_name = 'clip'
 config.model.clip_dir = '/your_clip_path/'
 config.model.bakcbone_use_mae_weight = False
 config.model.fix_backbone = True
@@ -101,6 +102,7 @@ config.train.aug_prob_flip = 0.2
 config.train.aug_prob_crop = 0.2
 config.train.aug_prob_affine = 0.2
 config.train.use_hnm = False
+config.train.use_fix_hnm = False
 config.train.use_query_roi = False
 
 # test config

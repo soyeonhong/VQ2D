@@ -40,6 +40,8 @@ def parse_args():
         '--batch_size', default=3, type=int, help='batch size')
     parser.add_argument(
         '--lr', default=0.003, type=float, help='learning_rate')
+    parser.add_argument(
+        '--resume_dir', default=None, type=str, help='resume_dir')
     args, rest = parser.parse_known_args()
     update_config(args.cfg)
     return args
@@ -104,7 +106,7 @@ def main():
         try:
             model, optimizer, schedular, scaler, ep_resume, best_iou, best_prob = train_utils.resume_training(
                                                                                 model, optimizer, schedular, scaler, 
-                                                                                output_dir,
+                                                                                args.resume_dir,
                                                                                 cpt_name='cpt_last.pth.tar')
             print('LR after resume {}'.format(optimizer.param_groups[0]['lr']))
         except:

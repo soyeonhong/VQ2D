@@ -128,7 +128,6 @@ def validate(config, loader, model, epoch, output_dir, device, rank, wandb_run=N
                             query_frame_bbox=sample['query_frame_bbox'], 
                             training=False, fix_backbone=config.model.fix_backbone)
             else:
-                preds = model(clips, queries, training=False, fix_backbone=config.model.fix_backbone)
                 preds = model(clips, queries, query_texts, training=False, fix_backbone=config.model.fix_backbone)
             results, preds_top = val_performance(config, preds, sample)
             try:

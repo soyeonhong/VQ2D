@@ -13,6 +13,7 @@ from dataset import dataset_utils
 from model.mae import vit_base_patch16
 import clip
 import os
+import random
 
 base_sizes=torch.tensor([[16, 16], [32, 32], [64, 64], [128, 128]], dtype=torch.float32)    # 4 types of size
 aspect_ratios=torch.tensor([0.5, 1, 2], dtype=torch.float32)                                # 3 types of aspect ratio
@@ -20,7 +21,7 @@ n_base_sizes = base_sizes.shape[0]
 n_aspect_ratios = aspect_ratios.shape[0]
 
 
-def build_backbone(config):
+def build_backbone(config, with_text=False):
     name, bone_type = config.model.backbone_name, config.model.backbone_type
     if os.path.isdir(config.dataset.hub_dir):
         torch.hub.set_dir(config.dataset.hub_dir)
@@ -51,13 +52,27 @@ def build_backbone(config):
             backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
         else:
             backbone, _ = clip.load(bone_type, device='cuda') 
-        backbone_dim = [768, 512]
+        backbone_dim = 768
         down_rate = backbone.visual.conv1.kernel_size[0]
         idal_patches = (config.dataset.clip_size_fine // down_rate)**2+1
         if idal_patches != backbone.visual.positional_embedding.shape[0]:
-            backbone.visual.positional_embedding = interpolate_pos_encoding(backbone.visual.positional_embedding, patches=idal_patches, dim= backbone_dim[0], height=config.dataset.clip_size_fine, width=config.dataset.clip_size_coarse, patch_size=backbone.visual.conv1.kernel_size)
+            backbone.visual.positional_embedding = interpolate_pos_encoding(backbone.visual.positional_embedding, patches=idal_patches, dim= backbone_dim, height=config.dataset.clip_size_fine, width=config.dataset.clip_size_coarse, patch_size=backbone.visual.conv1.kernel_size)
 
-    return backbone, down_rate, backbone_dim
+    if with_text:
+        text_name = config.model.text_backbone_name
+        if text_name == 'CLIP':
+            text_backbone_dim = 512
+            if name == 'CLIP':
+                text_backbone = backbone
+            else:
+                if os.path.isfile(config.model.clip_dir):
+                    text_backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
+                else:
+                    text_backbone, _ = clip.load(bone_type, device='cuda') 
+                # text_backbone.visual = nn.Identity()
+        return backbone, text_backbone, down_rate, backbone_dim, text_backbone_dim
+            
+    return backbone, None, down_rate, backbone_dim, None
 
 def interpolate_pos_encoding(positional_embedding, patches: int, dim: int, height: int, width: int, patch_size) -> torch.Tensor:
     """
@@ -91,19 +106,27 @@ def interpolate_pos_encoding(positional_embedding, patches: int, dim: int, heigh
 
     return torch.nn.Parameter(output.squeeze(0)).to(positional_embedding.device)
 
+def freeze_backbone(model, model2=None):
+    for param in model.parameters():
+        param.requires_grad = False
+    if model2 is not None:
+        for param in model2.parameters():
+            param.requires_grad = False
+        
 
 class ClipMatcher(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
 
-        self.backbone, self.down_rate, self.backbone_dim = build_backbone(config)
-        self.backbone_name = config.model.backbone_name
-        if self.backbone_name in ['CLIP', 'CLIP_text']:
-            self.backbone_dim, self.backbone_text_dim  = self.backbone_dim[0], self.backbone_dim[1]
-        
-        self.query_type = config.dataset.query_type # 448, 224
+        self.query_type = config.model.query_type # 448, 224
         assert self.query_type in ['image', 'text', 'both']
+        self.with_text = True if self.query_type in ['text','both'] else False
+        self.backbone, self.text_backbone, self.down_rate, self.backbone_dim, self.text_backbone_dim = build_backbone(config, self.with_text)
+        self.backbone_name, self.text_backbone_name = config.model.backbone_name, config.model.text_backbone_name
+        if config.model.fix_backbone:
+            freeze_backbone(self.backbone, self.text_backbone)
+        
         self.query_size = config.dataset.query_size # 448, 224
         self.clip_size_fine = config.dataset.clip_size_fine # 448, 224
         self.clip_size_coarse = config.dataset.clip_size_coarse # 448, 224
@@ -123,7 +146,7 @@ class ClipMatcher(nn.Module):
                                                         num_regions=[self.resolution_anchor_feat, self.resolution_anchor_feat])
         self.anchors_xyhw = self.anchors_xyhw / self.clip_size_coarse   # [R^2*N*M,4], value range [0,1], represented by [c_x,c_y,h,w] in torch axis
         self.anchors_xyxy = bbox_xyhwToxyxy(self.anchors_xyhw)
-
+        
         # query down heads ???????????????
         self.query_down_heads = []
         for _ in range(int(math.log2(self.query_feat_size))):
@@ -148,14 +171,18 @@ class ClipMatcher(nn.Module):
         )
         
         if self.query_type in ['text','both']:
-            self.reduce_text = nn.Sequential(
-                nn.Conv1d(self.backbone_text_dim, 256, 3, padding=1),
-                nn.BatchNorm1d(256),
-                nn.LeakyReLU(inplace=True),
-                nn.Conv1d(256, 256, 3, padding=1),
-                nn.BatchNorm1d(256),
-                nn.LeakyReLU(inplace=True),
-            )
+            if not self.CQ_after_reduce:
+                self.text_reduce = nn.Sequential(
+                    nn.Conv1d(self.text_backbone_dim, 256, 3, padding=1),
+                    nn.BatchNorm1d(256),
+                    nn.LeakyReLU(inplace=True),
+                    nn.Conv1d(256, 256, 3, padding=1),
+                    nn.BatchNorm1d(256),
+                    nn.LeakyReLU(inplace=True),
+                )
+            else:
+                scale = self.backbone_dim ** -0.5
+                self.text_proj = nn.Parameter(scale * torch.randn(self.text_backbone_dim, self.backbone_dim))
         
         d_dim = 256 if not self.CQ_after_reduce else 768
         
@@ -257,34 +284,35 @@ class ClipMatcher(nn.Module):
             patch_size = int(self.config.model.backbone_type.replace('ViT-B/', '')) # 32
             h, w = int(h_origin / patch_size), int(w_origin / patch_size) # 7, 7
             dim = out.shape[-1] # 768
-            out = out.reshape(b, h, w, dim).permute(0,3,1,2)
+            out = out.reshape(b, h, w, dim).permute(0,3,1,2).float()
             if return_h_w:
                 return out, h, w
             return out
         
     def encode_text(self, text):
-        device = next(self.backbone.parameters()).device
-        x = self.backbone.token_embedding(text.to(device)).type(self.backbone.dtype)  # [batch_size, n_ctx, d_model]
+        device = next(self.text_backbone.parameters()).device
+        x = self.text_backbone.token_embedding(text.to(device)).type(self.text_backbone.dtype)  # [batch_size, n_ctx, d_model]
 
-        x = x + self.backbone.positional_embedding.type(self.backbone.dtype)
+        x = x + self.text_backbone.positional_embedding.type(self.text_backbone.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.backbone.transformer(x)
+        x = self.text_backbone.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
-        x = self.backbone.ln_final(x).type(self.backbone.dtype)
+        x = self.text_backbone.ln_final(x).type(self.text_backbone.dtype)
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.backbone.text_projection
-        x = x[torch.arange(x.shape[0])] @ self.backbone.text_projection
+        # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_backbone.text_projection
+        x = x[torch.arange(x.shape[0])] @ self.text_backbone.text_projection
 
         return x
     
     def extract_text_feature(self, x):
-        # x = x.half()
-        # b, _, h_origin, w_origin = x.shape # h_origin, w_origin -> 224        
-        text = clip.tokenize(x)
-        text_features = self.encode_text(text)
-        return text_features.permute(0,2,1)
+        if self.text_backbone_name == 'CLIP':
+            text = clip.tokenize(x)
+            text_features = self.encode_text(text)
+            text_features = text_features.permute(0,2,1).float()
+            # text_features = (text_features.permute(0,2,1) @ self.text_proj.to(text_features.dtype)).permute(0,2,1)
+        return text_features
         
     def forward_clip(self, x, visual, enable_proj=False):
         x = visual.conv1(x)
@@ -303,7 +331,7 @@ class ClipMatcher(nn.Module):
             x = x @ visual.proj
         return x
     
-    def replicate_for_hnm(self, query_feat, clip_feat):
+    def replicate_for_hnm(self, query_feat, clip_feat, equal_negative, query_text_feat=None):
         '''
         query_feat in shape [b,c,h,w]
         clip_feat in shape [b*t,c,h,w]
@@ -314,17 +342,39 @@ class ClipMatcher(nn.Module):
         
         clip_feat = rearrange(clip_feat, '(b t) c h w -> b t c h w', b=b, t=t)
 
-        new_clip_feat, new_query_feat = [], []
-        for i in range(b):
-            for j in range(b):
+        new_clip_feat, new_query_feat, new_query_text_feat = [], [], []
+        if not equal_negative:
+            for i in range(b):
+                for j in range(b):
+                    new_clip_feat.append(clip_feat[i])
+                    new_query_feat.append(query_feat[j])
+                    if query_text_feat:
+                        new_query_text_feat.append(query_text_feat[j])
+                        
+        else:
+            negative_indices = []
+            for i in range(b):
+                new_clip_feat.append(clip_feat[i])
+                new_query_feat.append(query_feat[i])
+                if query_text_feat:
+                    new_query_text_feat.append(query_text_feat[j])
+                for j in range(b):
+                    if i != j:
+                        negative_indices.append((i, j))
+            negative_indices = random.sample(negative_indices, b)
+            for i, j in negative_indices:
                 new_clip_feat.append(clip_feat[i])
                 new_query_feat.append(query_feat[j])
+                if query_text_feat:
+                    new_query_text_feat.append(query_text_feat[j])
 
         new_clip_feat = torch.stack(new_clip_feat)      # [b^2,t,c,h,w]
         new_query_feat = torch.stack(new_query_feat)    # [b^2,c,h,w]
+        if query_text_feat:
+            new_query_text_feat = torch.stack(new_query_text_feat)    # [b^2,c,h,w]
 
         new_clip_feat = rearrange(new_clip_feat, 'b t c h w -> (b t) c h w')
-        return new_clip_feat, new_query_feat
+        return new_clip_feat, new_query_feat, new_query_text_feat
 
 
     def forward(self, clip, query, query_text=None, query_frame_bbox=None, training=False, fix_backbone=True):
@@ -338,18 +388,22 @@ class ClipMatcher(nn.Module):
         # get backbone features
         if fix_backbone:
             with torch.no_grad():
+                query_text_feat = None
                 clip_feat, h, w = self.extract_feature(clip) # (b t) c h w -> [b*30(clip_num_frames), 768, 32, 32]
                 if self.query_type in ['text','both']:
                     query_text_feat = self.extract_text_feature(query_text)
-                    clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
-                if self.query_type in ['image','both']:
+                    # clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
+                # if self.query_type in ['image','both']:
+                if self.query_type in ['image','both','text']:
                     query_feat, _, _ = self.extract_feature(query) # [b c h w] -> [b, 768, 32, 32]
         else:
+            query_text_feat = None
             clip_feat, h, w = self.extract_feature(clip)
             if self.query_type in ['text','both']:
                 query_text_feat = self.extract_text_feature(query_text)
-                clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
-            if self.query_type in ['image','both']:
+                # clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
+            # if self.query_type in ['image','both']:
+            if self.query_type in ['image','both','text']:
                 query_feat, _, _ = self.extract_feature(query)
     
         # h, w = clip_feat.shape[-2:] # dinov2 -> 32, 32
@@ -362,25 +416,37 @@ class ClipMatcher(nn.Module):
 
         all_feat = torch.cat([query_feat, clip_feat], dim=0)
         
-        if self.config.model.backbone_name in ['CLIP', 'CLIP_text']:
-            all_feat = all_feat.float()
         if not self.CQ_after_reduce:
             # reduce channel size
             all_feat = self.reduce(all_feat)
+        if self.query_type in ['text','both']:
+            if not self.CQ_after_reduce:
+                query_text_feat = self.text_reduce(query_text_feat)
+            else:
+                query_text_feat = (query_text_feat.permute(0,2,1) @ self.text_proj.to(query_text_feat.dtype)).permute(0,2,1)
         query_feat, clip_feat = all_feat.split([b, b*t], dim=0)
+        query_text_feat = None if query_text_feat is None else query_text_feat
 
-        if self.config.train.use_hnm and training:
-            clip_feat, query_feat = self.replicate_for_hnm(query_feat, clip_feat)   # b -> b^2
-            b = b**2
+        if (self.config.train.use_hnm or self.config.train.use_fix_hnm) and training:
+            clip_feat, query_feat, query_text_feat = self.replicate_for_hnm(query_feat, clip_feat, self.config.train.use_fix_hnm, query_text_feat)   # b -> b^2
+            b = b**2 if not self.config.train.use_fix_hnm else b*2
         
         # find spatial correspondence between query-frame
-        query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')  # [b*t,n,c]
-        clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                         # [b*t,n,c]
+        if self.query_type == 'text':
+            query_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c')      # [b*t,n,c]
+        elif self.query_type == 'both':
+            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
+            query_text_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c') # [b*t,n,c]
+            query_feat = torch.concat([query_feat,query_text_feat], dim=1)
+        else:
+            query_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c')      # [b*t,n,c]
+            
+        clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                              # [b*t,n,c]
         
         # spatial correspondence
         for layer in self.CQ_corr_transformer:
-            clip_feat = layer(clip_feat, query_feat)                                                     # [b*t,n,c]
-        clip_feat = rearrange(clip_feat, 'b (h w) c -> b c h w', h=h, w=w)                               # [b*t,c,h,w] # [90, 256, 32, 32]
+            clip_feat = layer(clip_feat, query_feat)                                                          # [b*t,n,c]
+        clip_feat = rearrange(clip_feat, 'b (h w) c -> b c h w', h=h, w=w)                                    # [b*t,c,h,w] # [90, 256, 32, 32]
         
         if self.CQ_after_reduce:
             # reduce channel size
