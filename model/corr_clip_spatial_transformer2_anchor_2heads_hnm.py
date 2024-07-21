@@ -68,7 +68,7 @@ def build_backbone(config, with_text=False):
                 if os.path.isfile(config.model.clip_dir):
                     text_backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
                 else:
-                    text_backbone, _ = clip.load(bone_type, device='cuda') 
+                    text_backbone, _ = clip.load('ViT-B/16', device='cuda') 
                 # text_backbone.visual = nn.Identity()
         return backbone, text_backbone, down_rate, backbone_dim, text_backbone_dim
             
