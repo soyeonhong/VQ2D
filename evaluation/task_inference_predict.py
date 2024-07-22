@@ -156,10 +156,11 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, query_te
             print(clips.shape, idx_start, idx_end, batch_size_inference, inference_num_frames, query_frame, inference_time)
         clips = clips.to(device)
         queries = queries.to(device)
+        query_text = [query_texts[:] for _ in range(batch_size_inference)]
 
         # inference
         with torch.no_grad():
-            preds = model(clips, queries, query_texts, fix_backbone=config.model.fix_backbone)
+            preds = model(clips, queries, query_text, fix_backbone=config.model.fix_backbone)
         preds_top = get_top_predictions(config, preds, num_frames, oshape)
         ret_bboxes.append(preds_top['bbox'])
         ret_scores.append(preds_top['prob'])
