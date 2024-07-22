@@ -439,7 +439,7 @@ class ClipMatcher(nn.Module):
             query_text_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c') # [b*t,n,c]
             query_feat = torch.concat([query_feat,query_text_feat], dim=1)
         else:
-            query_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c')      # [b*t,n,c]
+            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
             
         clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                              # [b*t,n,c]
         
