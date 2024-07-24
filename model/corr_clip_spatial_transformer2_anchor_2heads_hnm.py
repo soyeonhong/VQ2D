@@ -193,7 +193,7 @@ class ClipMatcher(nn.Module):
                 torch.nn.TransformerDecoderLayer(
                     d_model=d_dim,
                     nhead=4,
-                    dim_feedforward=1024,
+                    dim_feedforward=d_dim*4,
                     dropout=0.0,
                     activation='gelu',
                     batch_first=True
