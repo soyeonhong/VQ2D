@@ -110,6 +110,8 @@ def parse_args():
     parser.add_argument(
         "--debug", dest="debug", action="store_true",help="evaluate model")
     parser.add_argument(
+        '--output_path', default=None, type=str, help='set output path')
+    parser.add_argument(
         "--gt_query_cheating", default = False, type=bool)
     parser.add_argument(
         "--window_cheating", default = False, type=bool)
@@ -125,7 +127,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    logger, output_dir = exp_utils.create_logger(config, args.cfg, phase='val')
+    logger, output_dir = exp_utils.create_logger(config, args.cfg, args.output_path, phase='val')
     # mode = 'eval' if args.eval else 'val'
     mode = 'val'
     # time_str = time.strftime('%Y-%m-%d-%H-%M')

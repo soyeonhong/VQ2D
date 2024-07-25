@@ -79,6 +79,8 @@ class QueryVideoDataset(Dataset):
                 self.trnasofrm = self._transform(384)
             else:
                 self.transform = self._transform(config.dataset.clip_size_fine)
+                
+        self.use_prompt = config.dataset.use_prompt
             
 
     def _load_metadata(self):
@@ -120,10 +122,15 @@ class QueryVideoDataset(Dataset):
                                 "response_track": sorted(qset["response_track"], key=lambda x: x['frame_number']),
                                 "response_track_valid_range": [frame_id_min, frame_id_max], 
                                 "visual_crop": qset["visual_crop"],
-                                "object_title": qset["object_title"],
                                 # Assign a unique ID to this annotation for the dataset
                                 "dataset_uid": f"{self.split}_{n_samples_valid:010d}"
                             }
+                            
+                            if self.use_prompt:
+                                curr_anno['object_title'] = f'a photo of a {qset['object_title']}'
+                            else:
+                                curr_anno['object_title'] = qset['object_title']
+                                
                             query_path = self._get_query_path(curr_anno)
                             # if not os.exists(query_path):
                             #     continue

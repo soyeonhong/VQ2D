@@ -110,6 +110,7 @@ config.test = edict()
 config.test.batch_size = 4
 config.test.compute_metric = True
 config.test.fg_threshold = 0.5
+config.test.overlap_frame = 0
 
 
 def _update_dict(k, v):

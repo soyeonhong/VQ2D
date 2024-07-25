@@ -42,6 +42,8 @@ def parse_args():
         '--lr', default=0.003, type=float, help='learning_rate')
     parser.add_argument(
         '--resume_dir', default=None, type=str, help='resume_dir')
+    parser.add_argument(
+        '--output_path', default=None, type=str, help='set output path')
     args, rest = parser.parse_known_args()
     update_config(args.cfg)
     return args
@@ -50,7 +52,7 @@ def parse_args():
 def main():
     # Get args and config
     args = parse_args()
-    logger, output_dir = exp_utils.create_logger(config, args.cfg, phase='train')
+    logger, output_dir = exp_utils.create_logger(config, args.cfg, args.output_path, phase='train')
     logger.info(pprint.pformat(args))
     logger.info(pprint.pformat(config))
 

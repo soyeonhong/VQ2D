@@ -124,6 +124,7 @@ class ClipMatcher(nn.Module):
         self.with_text = True if self.query_type in ['text','both'] else False
         self.backbone, self.text_backbone, self.down_rate, self.backbone_dim, self.text_backbone_dim = build_backbone(config, self.with_text)
         self.backbone_name, self.text_backbone_name = config.model.backbone_name, config.model.text_backbone_name
+        self.clip_only_use = (self.query_type in ['text','both'] and self.backbone_name == 'CLIP' and self.text_backbone_name == 'CLIP')
         if config.model.fix_backbone:
             freeze_backbone(self.backbone, self.text_backbone)
         
@@ -159,7 +160,10 @@ class ClipMatcher(nn.Module):
             )
         self.query_down_heads = nn.ModuleList(self.query_down_heads)
 
-        # if self.query_type in ['text','both']:
+        if self.clip_only_use:
+            self.CQ_after_reduce = True
+            self.backbone_dim = self.text_backbone_dim
+            
         # feature reduce layer
         self.reduce = nn.Sequential(
             nn.Conv2d(self.backbone_dim, 256, 3, padding=1),
@@ -171,7 +175,9 @@ class ClipMatcher(nn.Module):
         )
         
         if self.query_type in ['text','both']:
-            if not self.CQ_after_reduce:
+            if self.clip_only_use:
+                pass
+            elif not self.CQ_after_reduce:
                 self.text_reduce = nn.Sequential(
                     nn.Conv1d(self.text_backbone_dim, 256, 3, padding=1),
                     nn.BatchNorm1d(256),
@@ -184,8 +190,7 @@ class ClipMatcher(nn.Module):
                 scale = self.backbone_dim ** -0.5
                 self.text_proj = nn.Parameter(scale * torch.randn(self.text_backbone_dim, self.backbone_dim))
         
-        d_dim = 256 if not self.CQ_after_reduce else 768
-        
+        d_dim = 256 if not self.CQ_after_reduce else self.backbone_dim
         # clip-query correspondence
         self.CQ_corr_transformer = []
         for _ in range(1):
@@ -420,7 +425,13 @@ class ClipMatcher(nn.Module):
             # reduce channel size
             all_feat = self.reduce(all_feat)
         if self.query_type in ['text','both']:
-            if not self.CQ_after_reduce:
+            if self.clip_only_use:
+                if fix_backbone:
+                    with torch.no_grad():
+                        all_feat = (all_feat.permute(0,2,3,1) @ self.backbone.visual.proj.float()).permute(0,3,1,2)
+                else:
+                    all_feat = (all_feat.permute(0,2,3,1) @ self.backbone.visual.proj.float()).permute(0,3,1,2)
+            elif not self.CQ_after_reduce:
                 query_text_feat = self.text_reduce(query_text_feat)
             else:
                 query_text_feat = (query_text_feat.permute(0,2,1) @ self.text_proj.to(query_text_feat.dtype)).permute(0,2,1)

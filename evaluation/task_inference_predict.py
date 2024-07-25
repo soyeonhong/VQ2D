@@ -97,8 +97,10 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, query_te
     # get query
     query = load_query(config, clip_reader, visual_crop, clip_path)     # [c,h,w]
     clip_num_frames = config.dataset.clip_num_frames    # 30
-    batch_size = config.train.batch_size
-    batch_num_frames = clip_num_frames * batch_size
+    batch_size = config.test.batch_size
+    overlap_frame = config.test.overlap_frame
+    assert clip_num_frames > overlap_frame
+    batch_num_frames = (clip_num_frames - overlap_frame) * batch_size
 
     ########### Window Cheating ############
     if start_frame is not None:
@@ -119,31 +121,44 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, query_te
         ########### Window Cheating ############
         if start_frame is not None:
             idx_start = min(start_frame + i * batch_num_frames, end_frame)
+            idx_overlap_end = min(start_frame + (i+1) * batch_num_frames+overlap_frame, end_frame)
             idx_end = min(start_frame + (i+1) * batch_num_frames, end_frame)
         ########### Window Cheating ############
         else:
             idx_start = min(i * batch_num_frames, query_frame-1)
+            idx_overlap_end = min((i+1) * batch_num_frames+overlap_frame, query_frame-1)
             idx_end = min((i+1) * batch_num_frames, query_frame-1)
         num_frames = idx_end - idx_start
         if num_frames < batch_num_frames:
             num_frames += 1
-        batch_size_inference = num_frames // clip_num_frames
-        if num_frames % clip_num_frames != 0:
+        batch_size_inference = num_frames // (clip_num_frames - overlap_frame)
+        if num_frames % (clip_num_frames - overlap_frame) != 0:
             batch_size_inference += 1
         assert batch_size_inference <= batch_size
 
         # index padding
-        inference_num_frames = batch_size_inference * clip_num_frames
-        frame_idx = list(range(idx_start, idx_end))
-        if len(frame_idx) < inference_num_frames:
-            num_pad = inference_num_frames - len(frame_idx)
-            frame_idx.extend([idx_end] * num_pad)   # [N=B*T]
+        inference_num_frames = batch_size_inference * (clip_num_frames - overlap_frame)
+        frame_idx = list(range(idx_start, idx_overlap_end))
+        if len(frame_idx) < inference_num_frames+overlap_frame:
+            num_pad = inference_num_frames+overlap_frame - len(frame_idx)
+            frame_idx.extend([idx_overlap_end] * num_pad)   # [N=B*T]
         #print(query_frame, idx_start, idx_end, num_frames, min(frame_idx), max(frame_idx))
         
         # get current clips
+        # clips_origin, clips = load_clip(config, clip_reader, frame_idx, clip_path)    # [N,3,H,W]
+        # clips_origin = clips_origin[:num_frames]
+        # clips = rearrange(clips, '(b t) c h w -> b t c h w', b=batch_size_inference, t=clip_num_frames)
+
         clips_origin, clips = load_clip(config, clip_reader, frame_idx, clip_path)    # [N,3,H,W]
         clips_origin = clips_origin[:num_frames]
-        clips = rearrange(clips, '(b t) c h w -> b t c h w', b=batch_size_inference, t=clip_num_frames)
+        if overlap_frame > 0:
+            clipss = rearrange(clips[:-overlap_frame], '(b t) c h w -> b t c h w', b=batch_size_inference, t=(clip_num_frames - overlap_frame))
+            if batch_size_inference != 1:
+                clips = torch.cat([clipss, torch.cat([clipss[1:,:overlap_frame],clips[-overlap_frame:].unsqueeze(0)],dim=0)],dim=1)
+            else:
+                clips = torch.cat([clipss,clips[-overlap_frame:].unsqueeze(0)],dim=1)
+        else:
+            clips = rearrange(clips, '(b t) c h w -> b t c h w', b=batch_size_inference, t=clip_num_frames)
 
         # process inputs
         clips = clips.to(device).float()

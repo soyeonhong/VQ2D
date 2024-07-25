@@ -87,7 +87,7 @@ def save_args(config_file_path, save_folder, save_name):
     copyfile(config_file_path, save_path)
 
 
-def create_logger(cfg, cfg_name, phase='train'):
+def create_logger(cfg, cfg_name, output_path=None, phase='train'):
     this_dir = Path(os.path.dirname(__file__))
     root_dir = (this_dir / '..').resolve()
     output_dir = (root_dir / cfg.output_dir).resolve() # /output
@@ -113,10 +113,14 @@ def create_logger(cfg, cfg_name, phase='train'):
     result_output_dir = output_dir / dataset_name / cfg_name / time_str_day 
     log_dir = result_output_dir / 'logs'
     final_output_dir = result_output_dir / str(job_id)
+    log_file = f'{job_id}.log'
+    if os.path.isdir(str(output_path)):
+        final_output_dir = Path(os.path.join(output_path,f'{job_id}_{phase}'))
+        log_dir = Path(output_path)
+        log_file = f'{job_id}_{phase}.log'
     final_output_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    log_file = f'{job_id}.log'
     final_log_file = log_dir / log_file
     head = '%(asctime)-15s %(message)s'
     for handler in logging.root.handlers[:]:
