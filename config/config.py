@@ -38,7 +38,7 @@ config.dataset.hub_dir = '/your_hub_path/'
 config.dataset.data_dir = '/your_data_path/'
 config.dataset.clip_dir = '/your_clip_path/'
 config.dataset.meta_dir = '/your_anno_path/'
-config.dataset.use_prompt = True
+config.dataset.use_prompt = False
 
 # model config
 config.model = edict()

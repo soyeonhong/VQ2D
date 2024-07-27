@@ -46,7 +46,10 @@ class Task:
             query_set = annot["metadata"]["query_set"]
             annot_key = f"{annotation_uid}_{query_set}"
             query_frame = annot["query_frame"]
-            query_text = annot["object_title"]
+            if config.dataset.use_prompt:
+                query_text = f"a photo of a {annot['object_title']}"
+            else:
+                query_text = annot["object_title"]
             visual_crop = annot["visual_crop"]
             save_path = os.path.join(self.output_dir, f'{annot_key}.pt')
             

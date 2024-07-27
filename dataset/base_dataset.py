@@ -127,7 +127,7 @@ class QueryVideoDataset(Dataset):
                             }
                             
                             if self.use_prompt:
-                                curr_anno['object_title'] = f'a photo of a {qset['object_title']}'
+                                curr_anno['object_title'] = f"a photo of a {qset['object_title']}"
                             else:
                                 curr_anno['object_title'] = qset['object_title']
                                 
