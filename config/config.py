@@ -38,7 +38,6 @@ config.dataset.hub_dir = '/your_hub_path/'
 config.dataset.data_dir = '/your_data_path/'
 config.dataset.clip_dir = '/your_clip_path/'
 config.dataset.meta_dir = '/your_anno_path/'
-config.dataset.use_prompt = False
 
 # model config
 config.model = edict()
@@ -46,7 +45,8 @@ config.model.CQ_after_reduce = False
 config.model.backbone_name = 'dino'
 config.model.backbone_type = 'vitb8'
 config.model.query_type = 'image'  # [image, text, both]
-config.model.text_backbone_name = 'clip'
+config.model.text_backbone_name = 'CLIP'
+config.model.text_backbone_type = 'ViT-B/16'
 config.model.clip_dir = '/your_clip_path/'
 config.model.bakcbone_use_mae_weight = False
 config.model.fix_backbone = True
@@ -59,6 +59,9 @@ config.model.window_transformer = 10
 config.model.positive_threshold = 0.2
 config.model.positive_topk = 5
 config.model.cpt_path = ''
+config.model.use_prompt = None # [None, Default, Learnable]
+config.model.prefix = 4
+config.model.postfix = 4
 
 # loss config
 config.loss = edict()

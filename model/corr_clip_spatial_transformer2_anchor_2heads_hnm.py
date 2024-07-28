@@ -13,6 +13,7 @@ from dataset import dataset_utils
 from model.mae import vit_base_patch16
 import clip
 import os
+import numpy as np
 import random
 
 base_sizes=torch.tensor([[16, 16], [32, 32], [64, 64], [128, 128]], dtype=torch.float32)    # 4 types of size
@@ -39,6 +40,8 @@ def build_backbone(config, with_text=False):
         down_rate = 14
         if bone_type == 'vitb14':
             backbone_dim = 768
+        if bone_type == 'vitl14':
+            backbone_dim = 1024
         elif bone_type == 'vits14':
             backbone_dim = 384
     elif name == 'mae':
@@ -52,7 +55,7 @@ def build_backbone(config, with_text=False):
             backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
         else:
             backbone, _ = clip.load(bone_type, device='cuda') 
-        backbone_dim = 768
+        backbone_dim = backbone.visual.positional_embedding.shape[-1]
         down_rate = backbone.visual.conv1.kernel_size[0]
         idal_patches = (config.dataset.clip_size_fine // down_rate)**2+1
         if idal_patches != backbone.visual.positional_embedding.shape[0]:
@@ -61,15 +64,15 @@ def build_backbone(config, with_text=False):
     if with_text:
         text_name = config.model.text_backbone_name
         if text_name == 'CLIP':
-            text_backbone_dim = 512
             if name == 'CLIP':
                 text_backbone = backbone
             else:
                 if os.path.isfile(config.model.clip_dir):
                     text_backbone, _ = clip.load(config.model.clip_dir, device='cuda') 
                 else:
-                    text_backbone, _ = clip.load('ViT-B/16', device='cuda') 
+                    text_backbone, _ = clip.load(config.model.text_backbone_type, device='cuda') 
                 # text_backbone.visual = nn.Identity()
+            text_backbone_dim = text_backbone.positional_embedding.shape[-1]
         return backbone, text_backbone, down_rate, backbone_dim, text_backbone_dim
             
     return backbone, None, down_rate, backbone_dim, None
@@ -127,6 +130,11 @@ class ClipMatcher(nn.Module):
         self.clip_only_use = (self.query_type in ['text','both'] and self.backbone_name == 'CLIP' and self.text_backbone_name == 'CLIP')
         if config.model.fix_backbone:
             freeze_backbone(self.backbone, self.text_backbone)
+        self.use_prompt = config.model.use_prompt
+        assert self.use_prompt in [None, 'None', 'Default', 'Learnable']
+        self.prefix, self.postfix = config.model.prefix, config.model.postfix
+        if self.use_prompt == 'Learnable':
+            self.prompt_embedding = torch.nn.Embedding(self.prefix + self.postfix, self.text_backbone_dim)
         
         self.query_size = config.dataset.query_size # 448, 224
         self.clip_size_fine = config.dataset.clip_size_fine # 448, 224
@@ -294,18 +302,42 @@ class ClipMatcher(nn.Module):
                 return out, h, w
             return out
         
-    def encode_text(self, text):
+    def replace_text_embedding(self, text,  videofeature = None):
         device = next(self.text_backbone.parameters()).device
-        x = self.text_backbone.token_embedding(text.to(device)).type(self.text_backbone.dtype)  # [batch_size, n_ctx, d_model]
+        prompt_embedding = self.prompt_embedding(torch.arange(self.prefix + self.postfix).to(device))[None, :].repeat([len(text), 1, 1])
 
+        prompt_token = torch.zeros(len(text), 77)
+        token = clip.tokenize(text)
+        embedding = self.text_backbone.token_embedding(token.to(device)).type(self.text_backbone.dtype)
+        ind = np.argmax(token, -1)
+        for i, a in enumerate(text):
+            temp_embedding = embedding[i].clone()
+            # prompt_apply_embedding[i,0] = embedding[i, 0]
+
+            # prompt_apply_embedding[i , self.prefix + 1: self.prefix + ind[i]] = embedding[i, 1:ind[i]]
+            # prompt_apply_embedding[i, self.prefix + ind[i] + self.postfix] = embedding[i, ind[i]]
+            
+            embedding[i, self.prefix + ind[i] + self.postfix] = temp_embedding[ind[i]]
+            embedding[i , self.prefix + ind[i]: self.prefix + ind[i] + self.postfix] = prompt_embedding[i, self.prefix:]
+            embedding[i , self.prefix + 1: self.prefix + ind[i]] = temp_embedding[1:ind[i]]
+            embedding[i , 1:self.prefix + 1] = prompt_embedding[i, 0:self.prefix]
+
+            prompt_token[i, 0] = token[i, 0]
+            prompt_token[i, self.prefix + 1: self.prefix + ind[i]] = token[i, 1:ind[i]]
+            prompt_token[i, self.prefix + ind[i] + self.postfix] = token[i, ind[i]]
+            
+        return embedding, prompt_token
+        
+    def encode_text(self, text, embedding=None):
+        device = next(self.text_backbone.parameters()).device
+        x = embedding if embedding is not None else self.text_backbone.token_embedding(text.to(device)).type(self.text_backbone.dtype)  # [batch_size, n_ctx, d_model]
+            
         x = x + self.text_backbone.positional_embedding.type(self.text_backbone.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.text_backbone.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.text_backbone.ln_final(x).type(self.text_backbone.dtype)
-
-        # x.shape = [batch_size, n_ctx, transformer.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        
         # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_backbone.text_projection
         x = x[torch.arange(x.shape[0])] @ self.text_backbone.text_projection
 
@@ -313,8 +345,14 @@ class ClipMatcher(nn.Module):
     
     def extract_text_feature(self, x):
         if self.text_backbone_name == 'CLIP':
-            text = clip.tokenize(x)
-            text_features = self.encode_text(text)
+            if self.use_prompt == 'Default':
+                x = ['a photo of a ' + word for word in x]
+                embedding, text = None, clip.tokenize(x)
+            elif self.use_prompt == 'Learnable':
+                embedding, text = self.replace_text_embedding(x)
+            else:
+                embedding, text = None, clip.tokenize(x)
+            text_features = self.encode_text(text, embedding)
             text_features = text_features.permute(0,2,1).float()
             # text_features = (text_features.permute(0,2,1) @ self.text_proj.to(text_features.dtype)).permute(0,2,1)
         return text_features

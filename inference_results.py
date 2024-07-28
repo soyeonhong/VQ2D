@@ -127,6 +127,8 @@ def parse_args():
     parser.add_argument(
         "--pred_dir", dest="pred_dir", type=str, default=None)
     parser.add_argument(
+        '--output_path', default=None, type=str, help='set output path')
+    parser.add_argument(
         "--gt_query_cheating", default = False, type=bool)
     parser.add_argument(
         "--window_cheating", default = False, type=bool)
@@ -141,7 +143,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    logger, output_dir = exp_utils.create_logger(config, args.cfg, phase='train')
+    logger, output_dir = exp_utils.create_logger(config, args.cfg, args.output_path, phase='val')
     # mode = 'eval' if args.eval else 'val'
     mode = 'val'
     # config.inference_cache_path = os.path.join(output_dir, f'inference_cache_{mode}')
@@ -179,8 +181,15 @@ if __name__ == '__main__':
             k: clipwise_annotations_list[k] for k in clips_list
         }
 
-    predictions_rt = get_results(clipwise_annotations_list, config, args.pred_dir)
+    if args.output_path:
+        predictions_rt = get_results(clipwise_annotations_list, config, output_dir)
+    else:
+        predictions_rt = get_results(clipwise_annotations_list, config, args.pred_dir)
     predictions = format_predictions(annotations, predictions_rt)
     if not args.debug:
-        with open(args.pred_dir + '_results.json.gz', 'w') as fp:
-            json.dump(predictions, fp)
+        if args.output_path:
+            with open(args.output_path + '_results.json.gz', 'w') as fp:
+                json.dump(predictions, fp)
+        else:
+            with open(args.pred_dir + '_results.json.gz', 'w') as fp:
+                json.dump(predictions, fp)

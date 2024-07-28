@@ -79,9 +79,6 @@ class QueryVideoDataset(Dataset):
                 self.trnasofrm = self._transform(384)
             else:
                 self.transform = self._transform(config.dataset.clip_size_fine)
-                
-        self.use_prompt = config.dataset.use_prompt
-            
 
     def _load_metadata(self):
         anno_processed_path = os.path.join(self.meta_dir, '{}_anno_new.json'.format(self.split))
@@ -119,6 +116,7 @@ class QueryVideoDataset(Dataset):
                                 "clip_fps": clip_data["clip_fps"],
                                 "query_set": qset_id,
                                 "query_frame": qset["query_frame"],
+                                "object_title": qset["object_title"],
                                 "response_track": sorted(qset["response_track"], key=lambda x: x['frame_number']),
                                 "response_track_valid_range": [frame_id_min, frame_id_max], 
                                 "visual_crop": qset["visual_crop"],
