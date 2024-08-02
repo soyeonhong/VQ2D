@@ -9,6 +9,7 @@ import itertools
 import argparse
 import json
 import tqdm
+import glob
 from queue import Empty as QueueEmpty
 
 import torch.utils.data
@@ -127,6 +128,8 @@ def parse_args():
     parser.add_argument(
         "--pred_dir", dest="pred_dir", type=str, default=None)
     parser.add_argument(
+        "--val_id", dest="val_id", type=int, default=None)
+    parser.add_argument(
         '--output_path', default=None, type=str, help='set output path')
     parser.add_argument(
         "--gt_query_cheating", default = False, type=bool)
@@ -143,7 +146,12 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    logger, output_dir = exp_utils.create_logger(config, args.cfg, args.output_path, phase='val')
+    logger, output_dir = exp_utils.create_logger(config, args.cfg, phase='val')
+    if args.output_path:
+        val_dir = glob.glob(os.path.join(args.output_path, '*_val'))
+        val_dir.sort()
+        val_job_id = val_dir[-1].split('/')[-1].split('_')[0] if args.val_id is None else args.val_id
+        output_dir = os.path.join(args.output_path, f'{val_job_id}_val')
     # mode = 'eval' if args.eval else 'val'
     mode = 'val'
     # config.inference_cache_path = os.path.join(output_dir, f'inference_cache_{mode}')
@@ -188,8 +196,9 @@ if __name__ == '__main__':
     predictions = format_predictions(annotations, predictions_rt)
     if not args.debug:
         if args.output_path:
-            with open(args.output_path + '_results.json.gz', 'w') as fp:
-                json.dump(predictions, fp)
+            save_result_path = os.path.join(args.output_path,f'{val_job_id}_results.json.gz')
         else:
-            with open(args.pred_dir + '_results.json.gz', 'w') as fp:
-                json.dump(predictions, fp)
+            save_result_path = args.pred_dir + '_results.json.gz'
+        print(f'Save_Result In {save_result_path}')
+        with open(save_result_path, 'w') as fp:
+            json.dump(predictions, fp)

@@ -294,7 +294,7 @@ class ClipMatcher(nn.Module):
             b, _, h_origin, w_origin = x.shape # h_origin, w_origin -> 224
             visual = self.backbone.visual
             out = self.forward_clip(x, visual, enable_proj) # [3, 49, 768]
-            patch_size = int(self.config.model.backbone_type.replace('ViT-B/', '')) # 32
+            patch_size = int(visual.conv1.kernel_size[0]) # 32
             h, w = int(h_origin / patch_size), int(w_origin / patch_size) # 7, 7
             dim = out.shape[-1] # 768
             out = out.reshape(b, h, w, dim).permute(0,3,1,2).float()

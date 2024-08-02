@@ -5,7 +5,7 @@ import tqdm
 from metrics.metrics import compute_visual_query_metrics
 from evaluation.structures import ResponseTrack, BBox
 from pathlib import Path
-import os
+import os, glob
 import pandas as pd
 
 def validate_model_predictions(model_predictions, test_annotations):
@@ -72,7 +72,7 @@ def validate_model_predictions(model_predictions, test_annotations):
 
             
 def evaluate(gt_file, pred_file):
-    print("Starting Evaluation.....")
+    print(f"Starting Evaluation..... {pred_file}")
 
     with open(gt_file, "r") as fp:
         gt_annotations = json.load(fp)
@@ -150,7 +150,7 @@ def evaluate(gt_file, pred_file):
             print(f"{k:<20s} | {v:>10.3f}")
 
 def evaluate2(gt_file, pred_file, train_file):
-    print("Starting Evaluation.....")
+    print(f"Starting Evaluation..... {pred_file}")
 
     with open(gt_file, "r") as fp:
         gt_annotations = json.load(fp)
@@ -234,7 +234,7 @@ def evaluate2(gt_file, pred_file, train_file):
             print(f"{k:<20s} | {v:>10.3f}")
 
 def evaluate_object(gt_file, pred_file):
-    print("Starting Evaluation.....")
+    print(f"Starting Evaluation..... {pred_file}")
 
     with open(gt_file, "r") as fp:
         gt_annotations = json.load(fp)
@@ -341,11 +341,19 @@ if __name__ == "__main__":
     parser.add_argument("--gt-file", required=False, type=str, default='/vision/hwjiang/episodic-memory/VQ2D/data/vq_val.json')
     parser.add_argument("--pred-file", required=False, type=str, default='/WRITE_YOUR_PATH_HERE/inference_cache_val_results.json.gz')
     parser.add_argument("--train-file", required=False, type=str, default='/WRITE_YOUR_PATH_HERE/object_class.json')
+    parser.add_argument("--output_path", required=False, type=str, default=None)
+    parser.add_argument("--val_id", required=False, type=int, default=None)
     parser.add_argument("--eval", dest="eval", action="store_true", help="evaluate model")
     parser.add_argument("--object", default=False, action="store_true", help="evaluate model")
     args = parser.parse_args()
     if args.eval:
         args.gt_file = args.gt_file.replace('vq_val.json', 'vq_test_unannotated.json')
+    if args.output_path:
+        if not os.path.isfile(args.pred_file):
+            result_dir = glob.glob(os.path.join(args.output_path, '*_results.json.gz'))
+            result_dir.sort()
+            val_job_id = result_dir[-1].split('/')[-1].split('_')[0] if args.val_id is None else args.val_id
+            args.pred_file =  os.path.join(args.output_path, f'{val_job_id}_results.json.gz')
 
     evaluate(args.gt_file, args.pred_file)
     if args.train_file != '/WRITE_YOUR_PATH_HERE/object_class.json':
