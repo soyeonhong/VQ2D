@@ -72,7 +72,7 @@ def validate_model_predictions(model_predictions, test_annotations):
 
             
 def evaluate(gt_file, pred_file):
-    print(f"Starting Evaluation..... {pred_file}")
+    print("Starting Evaluation.....")
 
     with open(gt_file, "r") as fp:
         gt_annotations = json.load(fp)
@@ -334,6 +334,90 @@ def evaluate_object(gt_file, pred_file):
     # CSV 파일로 저장합니다.
     df.to_csv(os.path.join(os.path.dirname(pred_file), f"{os.path.basename(pred_file).split('_')[0]}_object_data.csv"), index=False)
     print(df)
+    
+    
+def evaluate_in_clip(gt_file, pred_file):
+    print(f"Starting Evaluation..... {pred_file}")
+
+    with open(gt_file, "r") as fp:
+        gt_annotations = json.load(fp)
+    with open(pred_file, "r") as fp:
+        model_predictions = json.load(fp)
+
+    # Validate model predictions
+    validate_model_predictions(model_predictions, gt_annotations)
+
+    # Convert test annotations, model predictions to the correct format
+    predicted_response_tracks = []
+    annotated_response_tracks = []
+    visual_crop_boxes = []
+    for vanno, vpred in zip(
+        gt_annotations["videos"], model_predictions["results"]["videos"]
+    ):
+        for clip_annos, clip_preds in zip(vanno["clips"], vpred["clips"]):
+            for clip_anno, clip_pred in zip(
+                clip_annos["annotations"], clip_preds["predictions"]
+            ):
+                qset_ids = list(clip_anno["query_sets"].keys())
+                for qset_id in qset_ids:
+                    if not clip_anno["query_sets"][qset_id]["is_valid"]:
+                        continue
+                    q_anno = clip_anno["query_sets"][qset_id]
+                    q_pred = clip_pred["query_sets"][qset_id]
+                    rt_pred = ResponseTrack.from_json(q_pred)
+                    rt_anno = []
+                    
+                    input_clip_idx = [x['frame_number'] // 30 for x in q_anno['response_track']]
+                    
+                    if len(set(input_clip_idx)) == 1:
+                    
+                        for rf in q_anno["response_track"]:
+                            rt_anno.append(
+                                BBox(
+                                    rf["frame_number"],
+                                    rf["x"],
+                                    rf["y"],
+                                    rf["x"] + rf["width"],
+                                    rf["y"] + rf["height"],
+                                )
+                            )
+                        rt_anno = ResponseTrack(rt_anno)
+                        vc = q_anno["visual_crop"]
+                        vc_bbox = BBox(
+                            vc["frame_number"],
+                            vc["x"],
+                            vc["y"],
+                            vc["x"] + vc["width"],
+                            vc["y"] + vc["height"],
+                        )
+                        predicted_response_tracks.append([rt_pred])
+                        annotated_response_tracks.append(rt_anno)
+                        visual_crop_boxes.append(vc_bbox)
+
+    # Perform evaluation
+    pair_metrics = compute_visual_query_metrics(
+        predicted_response_tracks,
+        annotated_response_tracks,
+        visual_crop_boxes,
+    )
+
+    print("Evaluating VQ2D performance")
+    for pair_name, metrics in pair_metrics.items():
+        print("-" * 20)
+        print(pair_name)
+        print("-" * 20)
+        metrics = {
+            "tAP": metrics["Temporal AP                    @ IoU=0.25:0.95"],
+            "tAP @ IoU=0.25": metrics["Temporal AP                    @ IoU=0.25     "],
+            "stAP": metrics["SpatioTemporal AP              @ IoU=0.25:0.95"],
+            "stAP @ IoU=0.25": metrics[
+                "SpatioTemporal AP              @ IoU=0.25     "
+            ],
+            "success": metrics["Success (max scr)              @ IoU=0.05     "],
+            "recovery %": metrics["Tracking % recovery (max scr)  @ IoU=0.50     "],
+        }
+        for k, v in metrics.items():
+            print(f"{k:<20s} | {v:>10.3f}")
 
 
 if __name__ == "__main__":
@@ -345,6 +429,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_id", required=False, type=int, default=None)
     parser.add_argument("--eval", dest="eval", action="store_true", help="evaluate model")
     parser.add_argument("--object", default=False, action="store_true", help="evaluate model")
+    parser.add_argument("--in_clip", default=False, action="store_true", help="evaluate model")
     args = parser.parse_args()
     if args.eval:
         args.gt_file = args.gt_file.replace('vq_val.json', 'vq_test_unannotated.json')
@@ -360,4 +445,7 @@ if __name__ == "__main__":
         evaluate2(args.gt_file, args.pred_file, args.train_file)
     if args.object:
         evaluate_object(args.gt_file, args.pred_file)
+    if args.in_clip:
+        print("Evaluate in clip")
+        evaluate_in_clip(args.gt_file, args.pred_file)
         

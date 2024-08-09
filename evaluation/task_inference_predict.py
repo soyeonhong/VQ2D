@@ -28,7 +28,8 @@ class Task:
             for annot in self.annots
         ]
         self.clip_dir = config.dataset.clip_dir
-
+        self.reverse_frame = getattr(args, 'reverse_frame', False)
+        
     def run(self, model, config, device):
         clip_uid = self.annots[0]["clip_uid"]
 
@@ -49,6 +50,8 @@ class Task:
             query_text = annot["object_title"]
             visual_crop = annot["visual_crop"]
             save_path = os.path.join(self.output_dir, f'{annot_key}.pt')
+            if config.model.use_prompt  == 'Default':
+                query_text = f"a photo of a {query_text}"
             
             if os.path.isfile(save_path):
                 continue
@@ -69,13 +72,115 @@ class Task:
                                                     os.path.join(self.config.inference_cache_path, annot_key),
                                                     device,
                                                     start_frame,
-                                                    end_frame)
+                                                    end_frame,
+                                                    reverse_frame=self.reverse_frame)
             
             save_dict = {'ret_bboxes': ret_bboxes,
                          'ret_scores': ret_scores}
             torch.save(save_dict, save_path)
             
-def inference_video(config, model, clip_path, clip_reader, query_frame, query_texts, visual_crop, save_path, device, start_frame, end_frame):
+# def inference_video(config, model, clip_path, clip_reader, query_frame, query_texts, visual_crop, save_path, device, start_frame, end_frame, reverse_frame=False):
+#     '''
+#     Perform VQ2D inference:
+#         1. Load the query crop and clip
+#         2. Batchify the clips
+#         3. Do inference
+#     '''
+#     owidth, oheight = visual_crop["original_width"], visual_crop["original_height"]
+#     oshape = (owidth, oheight)
+
+#     # get clip frames
+#     origin_fps = int(clip_reader.get_avg_fps())
+#     assert origin_fps == 5
+#     vlen = len(clip_reader)
+#     search_window = list(range(0, query_frame))
+#     if query_frame >= vlen:
+#         print("=====> WARNING: Going out of range. Clip path: {}, Len: {}, query_frame: {}".format(
+#                 clip_path, len(clip_reader), query_frame))
+
+#     # get query
+#     query = load_query(config, clip_reader, visual_crop, clip_path)     # [c,h,w]
+#     clip_num_frames = config.dataset.clip_num_frames    # 30
+#     batch_size = config.train.batch_size
+#     batch_num_frames = clip_num_frames * batch_size
+
+#     ########### Window Cheating ############
+#     if start_frame is not None:
+#         total_frame = end_frame - start_frame + 1
+#         inference_time = (total_frame - 1) // batch_num_frames
+#         if (total_frame - 1) % batch_num_frames != 0:
+#             inference_time += 1
+#     ########### Window Cheating ############
+#     else:
+#         inference_time = (query_frame - 1) // batch_num_frames
+#         if (query_frame - 1) % batch_num_frames != 0:
+#             inference_time += 1
+    
+#     ret_bboxes, ret_scores = [], []
+#     for i in range(inference_time):
+#         # get the batch size for the current inference
+        
+#         ########### Window Cheating ############
+#         if start_frame is not None:
+#             idx_start = min(start_frame + i * batch_num_frames, end_frame)
+#             idx_end = min(start_frame + (i+1) * batch_num_frames, end_frame)
+#         ########### Window Cheating ############
+#         else:
+#             idx_start = min(i * batch_num_frames, query_frame-1)
+#             idx_end = min((i+1) * batch_num_frames, query_frame-1)
+#         num_frames = idx_end - idx_start
+#         if num_frames < batch_num_frames:
+#             num_frames += 1
+#         batch_size_inference = num_frames // clip_num_frames
+#         if num_frames % clip_num_frames != 0:
+#             batch_size_inference += 1
+#         assert batch_size_inference <= batch_size
+
+#         # index padding
+#         inference_num_frames = batch_size_inference * clip_num_frames
+#         frame_idx = list(range(idx_start, idx_end))
+#         if len(frame_idx) < inference_num_frames:
+#             num_pad = inference_num_frames - len(frame_idx)
+#             frame_idx.extend([idx_end] * num_pad)   # [N=B*T]
+#         #print(query_frame, idx_start, idx_end, num_frames, min(frame_idx), max(frame_idx))
+        
+#         # get current clips
+#         clips_origin, clips = load_clip(config, clip_reader, frame_idx, clip_path)    # [N,3,H,W]
+#         clips_origin = clips_origin[:num_frames]
+#         clips = rearrange(clips, '(b t) c h w -> b t c h w', b=batch_size_inference, t=clip_num_frames)
+
+#         # process inputs
+#         clips = clips.to(device).float()
+#         query = query.to(device).float()
+#         clips_raw = clips.clone()
+#         query_raw = query.clone()
+#         try:
+#             clips, queries = process_inputs(clips, query)
+#         except:
+#             print(clips.shape, idx_start, idx_end, batch_size_inference, inference_num_frames, query_frame, inference_time)
+#         clips = clips.to(device)
+#         queries = queries.to(device)
+#         query_text = [query_texts[:] for _ in range(batch_size_inference)]
+
+#         # inference
+#         with torch.no_grad():
+#             preds = model(clips, queries, query_text, fix_backbone=config.model.fix_backbone)
+#         preds_top = get_top_predictions(config, preds, num_frames, oshape)
+#         ret_bboxes.append(preds_top['bbox'])
+#         ret_scores.append(preds_top['prob'])
+
+#         if config.debug: #and device == torch.device("cuda:0"):
+#             vis_utils.vis_pred_clip_inference(clips=clips_origin, 
+#                                     queries=query_raw,
+#                                     pred=preds_top,
+#                                     save_path=save_path,
+#                                     iter_num=i)
+
+#     ret_bboxes = torch.cat(ret_bboxes, dim=0)
+#     ret_scores = torch.cat(ret_scores, dim=0)
+#     return ret_bboxes, ret_scores
+            
+def inference_video(config, model, clip_path, clip_reader, query_frame, query_texts, visual_crop, save_path, device, start_frame, end_frame, reverse_frame=False):
     '''
     Perform VQ2D inference:
         1. Load the query crop and clip
@@ -145,11 +250,9 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, query_te
         #print(query_frame, idx_start, idx_end, num_frames, min(frame_idx), max(frame_idx))
         
         # get current clips
-        # clips_origin, clips = load_clip(config, clip_reader, frame_idx, clip_path)    # [N,3,H,W]
-        # clips_origin = clips_origin[:num_frames]
-        # clips = rearrange(clips, '(b t) c h w -> b t c h w', b=batch_size_inference, t=clip_num_frames)
-
         clips_origin, clips = load_clip(config, clip_reader, frame_idx, clip_path)    # [N,3,H,W]
+        if reverse_frame:
+            clips = clips.flip(dims=[0])
         clips_origin = clips_origin[:num_frames]
         if overlap_frame > 0:
             clipss = rearrange(clips[:-overlap_frame], '(b t) c h w -> b t c h w', b=batch_size_inference, t=(clip_num_frames - overlap_frame))
@@ -177,6 +280,9 @@ def inference_video(config, model, clip_path, clip_reader, query_frame, query_te
         with torch.no_grad():
             preds = model(clips, queries, query_text, fix_backbone=config.model.fix_backbone)
         preds_top = get_top_predictions(config, preds, num_frames, oshape)
+        if reverse_frame:
+            preds_top['bbox'] = preds_top['bbox'].flip(dims=[0])
+            preds_top['prob'] = preds_top['prob'].flip(dims=[0])
         ret_bboxes.append(preds_top['bbox'])
         ret_scores.append(preds_top['prob'])
 

@@ -20,6 +20,7 @@ from config.config import config, update_config
 from utils import exp_utils
 from evaluation import eval_utils
 from evaluation.task_inference_predict import Task
+# from model.corr_clip_spatial_transformer2_anchor_2heads_hnm_raw import ClipMatcher
 from model.corr_clip_spatial_transformer2_anchor_2heads_hnm import ClipMatcher
 import time
 
@@ -119,6 +120,8 @@ def parse_args():
         "--cheating_type", default = "random", type=str)
     parser.add_argument(
         "--window_size", default = 10, type=int)
+    parser.add_argument(
+        "--reverse_frame", action='store_true', default=False)
     
     args, rest = parser.parse_known_args()
     update_config(args.cfg)

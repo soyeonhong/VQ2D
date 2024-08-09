@@ -15,6 +15,7 @@ from torch.cuda.amp import autocast as autocast
 
 from config.config import config, update_config
 
+# from model.corr_clip_spatial_transformer2_anchor_2heads_hnm_raw import ClipMatcher
 from model.corr_clip_spatial_transformer2_anchor_2heads_hnm import ClipMatcher
 from utils import exp_utils, train_utils, dist_utils
 from dataset import dataset_utils

@@ -522,7 +522,7 @@ class ClipMatcher(nn.Module):
         bbox_refine, prob = self.head(clip_feat)                                # [b*t,N=h*w*n*m,c]
         bbox_refine = rearrange(bbox_refine, '(b t) N c -> b t N c', b=b, t=t)  # [b,t,N,4], in xyhw frormulation
         prob = rearrange(prob, '(b t) N c -> b t N c', b=b, t=t)                # [b,t,N,1]
-                                                     # [b,t,N,4]
+        bbox_refine += anchors_xyhw                                             # [b,t,N,4]
 
         center, hw = bbox_refine.split([2,2], dim=-1)                           # represented by [c_x, c_y, h, w]
         hw = 0.5 * hw                                                           # anchor's hw is defined as real hw

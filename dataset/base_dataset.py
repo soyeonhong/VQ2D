@@ -66,9 +66,19 @@ class QueryVideoDataset(Dataset):
         # self.video_dir = '/vision/vision_data/Ego4D/v1/full_scale'
 
         self.split = split
+        self.use_prompt = True if config.model.use_prompt  == 'Default' else False
 
         self.clip_reader = video_reader_dict[clip_reader]
         self._load_metadata()
+        if config.train.del_short_clip != 1:
+            sorted_annotations = sorted(self.annotations, key= lambda x:len(x['response_track']))
+            sorted_annotations = sorted_annotations[int(len(self.annotations) * (1-config.train.del_short_clip)):]
+            self.annotations = sorted_annotations
+            print(f"Before clip length {0}% : {len(self.annotations[0]['response_track'])}",end=' | ')
+            for idx, clip_len in [[idx, len(self.annotations[len(self.annotations) // 10 * idx]['response_track'])] for idx in range(1,10)]:
+                print(f'{idx*10}% : {clip_len}',end=' | ')
+            print(f"{100}% : {len(self.annotations[-1]['response_track'])}")
+            print('Data remain start {} clip lens, with {} samples'.format(len(self.annotations[0]['response_track']), len(self.annotations)))
         if self.split != 'train':
             self.annotations = self.annotations[::eval_vis_freq]
         
@@ -123,11 +133,6 @@ class QueryVideoDataset(Dataset):
                                 # Assign a unique ID to this annotation for the dataset
                                 "dataset_uid": f"{self.split}_{n_samples_valid:010d}"
                             }
-                            
-                            if self.use_prompt:
-                                curr_anno['object_title'] = f"a photo of a {qset['object_title']}"
-                            else:
-                                curr_anno['object_title'] = qset['object_title']
                                 
                             query_path = self._get_query_path(curr_anno)
                             # if not os.exists(query_path):
@@ -421,6 +426,8 @@ class QueryVideoDataset(Dataset):
                 
         # load query text
         query_text = sample['object_title']
+        if self.use_prompt:
+            query_text = f"a photo of a {query_text}"
         
         # load clip bounding box
         clip_with_bbox, clip_bbox = self._get_clip_bbox(sample, clip_idxs)

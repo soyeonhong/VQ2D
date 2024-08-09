@@ -108,6 +108,7 @@ config.train.aug_prob_affine = 0.2
 config.train.use_hnm = False
 config.train.use_fix_hnm = False
 config.train.use_query_roi = False
+config.train.del_short_clip = 1
 
 # test config
 config.test = edict()
