@@ -19,7 +19,7 @@ from utils.loss_utils import GiouLoss
 logger = logging.getLogger(__name__)
 
 
-def train_epoch(config, loader, model, optimizer, schedular, scaler, epoch, output_dir, device, rank, wandb_run=None, ddp=True):
+def train_epoch(config, loader, model, optimizer, schedular, scaler, epoch, output_dir, device, rank, args, wandb_run=None, ddp=True):
     time_meters = exp_utils.AverageMeters()
     loss_meters = exp_utils.AverageMeters()
     
@@ -36,18 +36,23 @@ def train_epoch(config, loader, model, optimizer, schedular, scaler, epoch, outp
 
         # reconstruction loss
         clips, queries, query_texts = sample['clip'], sample['query'], sample['query_text']
-        #with autocast():
+        if args.reverse_frame:
+            clips = clips.flip(dims=[1])
+        # with autocast():
         if config.train.use_query_roi and 'query_frame' in sample.keys():
             preds = model(clips, 
-                          sample['query_frame'], 
-                          query_texts,
-                          query_frame_bbox=sample['query_frame_bbox'], 
-                          training=True, fix_backbone=config.model.fix_backbone)
+                        sample['query_frame'], 
+                        query_texts,
+                        query_frame_bbox=sample['query_frame_bbox'], 
+                        training=True, fix_backbone=config.model.fix_backbone)
         else:
             preds = model(clips, queries, query_texts, training=True, fix_backbone=config.model.fix_backbone)
         time_meters.add_loss_value('Prediction time', time.time() - end)
         end = time.time()
 
+        if args.reverse_frame:
+            preds['bbox'] = preds['bbox'].flip(dims=[1])
+            preds['prob'] = preds['prob'].flip(dims=[1])
         losses, preds_top, sample = loss_utils.get_losses_with_anchor(config, preds, sample)
         total_loss = 0.0
         for k, v in losses.items():
@@ -109,7 +114,7 @@ def train_epoch(config, loader, model, optimizer, schedular, scaler, epoch, outp
 
 
 
-def validate(config, loader, model, epoch, output_dir, device, rank, wandb_run=None, ddp=True):
+def validate(config, loader, model, epoch, output_dir, device, rank, args, wandb_run=None, ddp=True):
     model.eval()
     metrics = {}
 
@@ -121,6 +126,8 @@ def validate(config, loader, model, epoch, output_dir, device, rank, wandb_run=N
             sample = dataset_utils.process_data(config, sample, split='val', device=device)     # normalize and data augmentations on GPU
 
             clips, queries, query_texts = sample['clip'], sample['query'], sample['query_text']
+            if args.reverse_frame:
+                clips = clips.flip(dims=[1])
             if config.train.use_query_roi and 'query_frame' in sample.keys():
                 preds = model(clips, 
                             sample['query_frame'], 
@@ -129,6 +136,9 @@ def validate(config, loader, model, epoch, output_dir, device, rank, wandb_run=N
                             training=False, fix_backbone=config.model.fix_backbone)
             else:
                 preds = model(clips, queries, query_texts, training=False, fix_backbone=config.model.fix_backbone)
+            if args.reverse_frame:
+                preds['bbox'] = preds['bbox'].flip(dims=[1])
+                preds['prob'] = preds['prob'].flip(dims=[1])
             results, preds_top = val_performance(config, preds, sample)
             try:
                 for k, v in results.items():

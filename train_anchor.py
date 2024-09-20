@@ -45,6 +45,8 @@ def parse_args():
         '--resume_dir', default=None, type=str, help='resume_dir')
     parser.add_argument(
         '--output_path', default=None, type=str, help='set output path')
+    parser.add_argument(
+        "--reverse_frame", action='store_true', default=False)
     args, rest = parser.parse_known_args()
     update_config(args.cfg)
     return args
@@ -163,6 +165,7 @@ def main():
                     output_dir=output_dir,
                     device=device,
                     rank=local_rank,
+                    args=args,
                     ddp=ddp,
                     wandb_run=wandb_run
                     )
@@ -188,6 +191,7 @@ def main():
                                 output_dir=output_dir,
                                 device=device,
                                 rank=local_rank,
+                                args=args,
                                 ddp=ddp,
                                 wandb_run=wandb_run
                                 )

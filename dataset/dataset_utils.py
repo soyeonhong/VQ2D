@@ -78,7 +78,7 @@ def process_data(config, sample, iter=0, split='train', device='cuda'):
         'query': query                          # [B,3,H2,W2]
     '''    
     B, T, _, H, W = sample['clip'].shape
-    B, _, H2, W2 = sample['query'].shape
+    B, _, H2, W2 = sample['query'].shape[0], 0, sample['query'].shape[-2], sample['query'].shape[-1]
     normalization = kornia.enhance.Normalize(mean=NORMALIZE_MEAN, std=NORMALIZE_STD)
 
     brightness = config.train.aug_brightness
@@ -181,8 +181,12 @@ def process_data(config, sample, iter=0, split='train', device='cuda'):
     sample['clip'] = rearrange(clip, '(b t) c h w -> b t c h w', b=B, t=T)
 
     # normalize input query
-    sample['query_origin'] = sample['query'].clone()
-    sample['query'] = normalization(sample['query'])
+    if sample['query'].dim == 4:
+        sample['query_origin'] = sample['query'].clone()
+        sample['query'] = normalization(sample['query'])
+    else:
+        sample['query_origin'] = sample['query'][:,0,:,:,:].clone()
+        sample['query'] = normalization(rearrange(sample['query'],'t s c h w -> (t s) c h w'))
 
     # normalize input query frame
     if 'query_frame' in sample.keys():

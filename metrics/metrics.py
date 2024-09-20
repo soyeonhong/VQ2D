@@ -31,7 +31,9 @@ def compute_visual_query_metrics(
         "large": [192 ** 2, 1e5 ** 2],
     },
     vc_rt_pairings: Dict[str, Tuple[str, str]] = {
+        "all_all": ("all", "all"),
         "all": ("all", "large"),
+        "large": ("large", "large"),
     },
 ) -> Dict[str, float]:
     """

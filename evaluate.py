@@ -72,7 +72,7 @@ def validate_model_predictions(model_predictions, test_annotations):
 
             
 def evaluate(gt_file, pred_file):
-    print("Starting Evaluation.....")
+    print(f"Starting Evaluation..... {pred_file}")
 
     with open(gt_file, "r") as fp:
         gt_annotations = json.load(fp)

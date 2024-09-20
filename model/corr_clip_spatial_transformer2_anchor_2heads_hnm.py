@@ -123,6 +123,9 @@ class ClipMatcher(nn.Module):
         self.config = config
 
         self.query_type = config.model.query_type # 448, 224
+        self.query_stack = config.model.query_stack
+        self.query_stack_config = config.model.query_stack_config
+        self.cls_timestamp = config.model.cls_timestamp
         assert self.query_type in ['image', 'text', 'both']
         self.with_text = True if self.query_type in ['text','both'] else False
         self.backbone, self.text_backbone, self.down_rate, self.backbone_dim, self.text_backbone_dim = build_backbone(config, self.with_text)
@@ -173,11 +176,13 @@ class ClipMatcher(nn.Module):
             self.backbone_dim = self.text_backbone_dim
             
         # feature reduce layer
+        # kernal_size = 3 if not self.cls_timestamp else 1
+        kernal_size = 3 
         self.reduce = nn.Sequential(
-            nn.Conv2d(self.backbone_dim, 256, 3, padding=1),
+            nn.Conv2d(self.backbone_dim, 256, kernal_size, padding=1),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
+            nn.Conv2d(256, 256, kernal_size, padding=1),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(inplace=True),
         )
@@ -187,10 +192,10 @@ class ClipMatcher(nn.Module):
                 pass
             elif not self.CQ_after_reduce:
                 self.text_reduce = nn.Sequential(
-                    nn.Conv1d(self.text_backbone_dim, 256, 3, padding=1),
+                    nn.Conv1d(self.text_backbone_dim, 256, kernal_size, padding=1),
                     nn.BatchNorm1d(256),
                     nn.LeakyReLU(inplace=True),
-                    nn.Conv1d(256, 256, 3, padding=1),
+                    nn.Conv1d(256, 256, kernal_size, padding=1),
                     nn.BatchNorm1d(256),
                     nn.LeakyReLU(inplace=True),
                 )
@@ -215,12 +220,13 @@ class ClipMatcher(nn.Module):
         self.CQ_corr_transformer = nn.ModuleList(self.CQ_corr_transformer)
 
         # feature downsample layers
+        stride = 2 if not self.cls_timestamp else 1
         self.num_head_layers, self.down_heads = int(math.log2(self.clip_feat_size_coarse)), []
         for i in range(self.num_head_layers-1):
             self.in_channel = 256 if i != 0 else self.backbone_dim
             self.down_heads.append(
                 nn.Sequential(
-                nn.Conv2d(256, 256, 3, stride=2, padding=1),
+                nn.Conv2d(256, 256, kernal_size, stride=stride, padding=1),
                 nn.BatchNorm2d(256),
                 nn.LeakyReLU(inplace=True),
             ))
@@ -259,7 +265,7 @@ class ClipMatcher(nn.Module):
             nn.init.normal_(m.weight, mean=0.0, std=1e-6)
             nn.init.normal_(m.bias, mean=0.0, std=1e-6)
 
-    def extract_feature(self, x, return_h_w=True, enable_proj=False):
+    def extract_feature(self, x, return_h_w=True, enable_proj=False, cls_only=False):
         if self.backbone_name == 'dino':
             b, _, h_origin, w_origin = x.shape
             out = self.backbone.get_intermediate_layers(x, n=1)[0]
@@ -267,15 +273,17 @@ class ClipMatcher(nn.Module):
             h, w = int(h_origin / self.backbone.patch_embed.patch_size), int(w_origin / self.backbone.patch_embed.patch_size)
             dim = out.shape[-1]
             out = out.reshape(b, h, w, dim).permute(0,3,1,2)
+            out = out[:, :1, :] if cls_only else out
             if return_h_w:
                 return out, h, w
             return out
         elif self.backbone_name == 'dinov2': # ours
             b, _, h_origin, w_origin = x.shape
-            out = self.backbone.get_intermediate_layers(x, n=1)[0]
+            out, cls_token = self.backbone.get_intermediate_layers(x, n=1, return_class_token=True)[0]
             h, w = int(h_origin / self.backbone.patch_embed.patch_size[0]), int(w_origin / self.backbone.patch_embed.patch_size[1]) # 448 / 14 = 32
             dim = out.shape[-1]
             out = out.reshape(b, h, w, dim).permute(0,3,1,2) # [B, D, H, W]
+            out = cls_token.unsqueeze(2).unsqueeze(2) if cls_only else out
             if return_h_w:
                 return out, h, w
             return out
@@ -293,11 +301,11 @@ class ClipMatcher(nn.Module):
             x = x.half()
             b, _, h_origin, w_origin = x.shape # h_origin, w_origin -> 224
             visual = self.backbone.visual
-            out = self.forward_clip(x, visual, enable_proj) # [3, 49, 768]
+            out = self.forward_clip(x, visual, enable_proj, cls_only=cls_only) # [3, 49, 768]
             patch_size = int(visual.conv1.kernel_size[0]) # 32
             h, w = int(h_origin / patch_size), int(w_origin / patch_size) # 7, 7
             dim = out.shape[-1] # 768
-            out = out.reshape(b, h, w, dim).permute(0,3,1,2).float()
+            out = out.reshape(b, h, w, dim).permute(0,3,1,2).float() if not cls_only else out.squeeze(1).float()
             if return_h_w:
                 return out, h, w
             return out
@@ -357,7 +365,7 @@ class ClipMatcher(nn.Module):
             # text_features = (text_features.permute(0,2,1) @ self.text_proj.to(text_features.dtype)).permute(0,2,1)
         return text_features
         
-    def forward_clip(self, x, visual, enable_proj=False):
+    def forward_clip(self, x, visual, enable_proj=False, cls_only=False):
         x = visual.conv1(x)
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
@@ -368,7 +376,7 @@ class ClipMatcher(nn.Module):
         x = visual.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         # x = self.ln_post(x[:, 0, :])
-        x = visual.ln_post(x[:, 1:, :])
+        x = visual.ln_post(x[:, 1:, :]) if not cls_only else visual.ln_post(x[:, :1, :])
         
         if enable_proj:
             x = x @ visual.proj
@@ -432,7 +440,7 @@ class ClipMatcher(nn.Module):
         if fix_backbone:
             with torch.no_grad():
                 query_text_feat = None
-                clip_feat, h, w = self.extract_feature(clip) # (b t) c h w -> [b*30(clip_num_frames), 768, 32, 32]
+                clip_feat, h, w = self.extract_feature(clip, cls_only=self.cls_timestamp) # (b t) c h w -> [b*30(clip_num_frames), 768, 32, 32]
                 if self.query_type in ['text','both']:
                     query_text_feat = self.extract_text_feature(query_text)
                     # clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
@@ -441,7 +449,7 @@ class ClipMatcher(nn.Module):
                     query_feat, _, _ = self.extract_feature(query) # [b c h w] -> [b, 768, 32, 32]
         else:
             query_text_feat = None
-            clip_feat, h, w = self.extract_feature(clip)
+            clip_feat, h, w = self.extract_feature(clip, cls_only=self.cls_timestamp)
             if self.query_type in ['text','both']:
                 query_text_feat = self.extract_text_feature(query_text)
                 # clip_text_feat = (clip_feat.permute(0,2,3,1) @ self.backbone.visual.proj).permute(0,3,1,2)
@@ -450,18 +458,25 @@ class ClipMatcher(nn.Module):
                 query_feat, _, _ = self.extract_feature(query)
     
         # h, w = clip_feat.shape[-2:] # dinov2 -> 32, 32
-
+        if self.cls_timestamp:
+            h, w = 1, 1
+        
         if torch.is_tensor(query_frame_bbox) and self.config.train.use_query_roi:
             idx_tensor = torch.arange(b, device=clip.device).float().view(-1, 1)
             query_frame_bbox = dataset_utils.recover_bbox(query_frame_bbox, h, w)
             roi_bbox = torch.cat([idx_tensor, query_frame_bbox], dim=1)
             query_feat = torchvision.ops.roi_align(query_feat, roi_bbox, (h,w))
 
-        all_feat = torch.cat([query_feat, clip_feat], dim=0)
+        all_feat = torch.cat([query_feat, clip_feat], dim=0) if not self.cls_timestamp else None
         
         if not self.CQ_after_reduce:
             # reduce channel size
-            all_feat = self.reduce(all_feat)
+            if not self.cls_timestamp:
+                all_feat = self.reduce(all_feat)
+            else:
+                query_feat = self.reduce(query_feat)
+                clip_feat = self.reduce(clip_feat)
+
         if self.query_type in ['text','both']:
             if self.clip_only_use:
                 if fix_backbone:
@@ -473,22 +488,32 @@ class ClipMatcher(nn.Module):
                 query_text_feat = self.text_reduce(query_text_feat)
             else:
                 query_text_feat = (query_text_feat.permute(0,2,1) @ self.text_proj.to(query_text_feat.dtype)).permute(0,2,1)
-        query_feat, clip_feat = all_feat.split([b, b*t], dim=0)
+        if not self.cls_timestamp:
+            query_feat, clip_feat = all_feat.split([b*self.query_stack, b*t], dim=0)
         query_text_feat = None if query_text_feat is None else query_text_feat
 
         if (self.config.train.use_hnm or self.config.train.use_fix_hnm) and training:
             clip_feat, query_feat, query_text_feat = self.replicate_for_hnm(query_feat, clip_feat, self.config.train.use_fix_hnm, query_text_feat)   # b -> b^2
             b = b**2 if not self.config.train.use_fix_hnm else b*2
         
+        if self.query_stack_config == 'mean' and self.query_stack >= 2:
+            query_feat = rearrange(query_feat, '(b s) c h w -> b s c h w', s=self.query_stack).mean(dim=1)
+        
         # find spatial correspondence between query-frame
         if self.query_type == 'text':
             query_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c')      # [b*t,n,c]
         elif self.query_type == 'both':
-            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
+            if self.query_stack_config == 'cat' and self.query_stack >= 2:
+                query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), '(b s) t c h w -> (b t) (h w s) c', s=self.query_stack)   # [b*t,n,c]
+            else:
+                query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
             query_text_feat = rearrange(query_text_feat.unsqueeze(1).repeat(1,t,1,1), 'b t c n -> (b t) n c') # [b*t,n,c]
             query_feat = torch.concat([query_feat,query_text_feat], dim=1)
         else:
-            query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
+            if self.query_stack_config == 'cat' and self.query_stack >= 2:
+                query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), '(b s) t c h w -> (b t) (h w s) c', s=self.query_stack)   # [b*t,n,c]
+            else:
+                query_feat = rearrange(query_feat.unsqueeze(1).repeat(1,t,1,1,1), 'b t c h w -> (b t) (h w) c')   # [b*t,n,c]
             
         clip_feat = rearrange(clip_feat, 'b c h w -> b (h w) c')                                              # [b*t,n,c]
         

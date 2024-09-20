@@ -45,6 +45,8 @@ config.model.CQ_after_reduce = False
 config.model.backbone_name = 'dino'
 config.model.backbone_type = 'vitb8'
 config.model.query_type = 'image'  # [image, text, both]
+config.model.query_stack = 1
+config.model.query_stack_config = 'cat' # [cat, mean]
 config.model.text_backbone_name = 'CLIP'
 config.model.text_backbone_type = 'ViT-B/16'
 config.model.clip_dir = '/your_clip_path/'
@@ -62,6 +64,7 @@ config.model.cpt_path = ''
 config.model.use_prompt = None # [None, Default, Learnable]
 config.model.prefix = 4
 config.model.postfix = 4
+config.model.cls_timestamp = False
 
 # loss config
 config.loss = edict()

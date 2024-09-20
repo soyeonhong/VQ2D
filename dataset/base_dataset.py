@@ -2,8 +2,9 @@ import os
 import pdb
 
 import tqdm
-import random
+import sys, random
 import json
+from collections import defaultdict
 
 import cv2
 import decord
@@ -72,15 +73,18 @@ class QueryVideoDataset(Dataset):
         self._load_metadata()
         if config.train.del_short_clip != 1:
             sorted_annotations = sorted(self.annotations, key= lambda x:len(x['response_track']))
-            sorted_annotations = sorted_annotations[int(len(self.annotations) * (1-config.train.del_short_clip)):]
-            self.annotations = sorted_annotations
-            print(f"Before clip length {0}% : {len(self.annotations[0]['response_track'])}",end=' | ')
-            for idx, clip_len in [[idx, len(self.annotations[len(self.annotations) // 10 * idx]['response_track'])] for idx in range(1,10)]:
+            self.annotations = sorted_annotations[int(len(self.annotations) * (1-config.train.del_short_clip)):]
+            print(f"Before clip length {0}% : {len(sorted_annotations[0]['response_track'])}",end=' | ')
+            for idx, clip_len in [[idx, len(sorted_annotations[len(sorted_annotations) // 10 * idx]['response_track'])] for idx in range(1,10)]:
                 print(f'{idx*10}% : {clip_len}',end=' | ')
-            print(f"{100}% : {len(self.annotations[-1]['response_track'])}")
+            print(f"{100}% : {len(sorted_annotations[-1]['response_track'])}")
             print('Data remain start {} clip lens, with {} samples'.format(len(self.annotations[0]['response_track']), len(self.annotations)))
         if self.split != 'train':
             self.annotations = self.annotations[::eval_vis_freq]
+        self.object_dict = defaultdict(list)
+        for idx, annotation in enumerate(self.annotations):
+            object_title = annotation['object_title']
+            self.object_dict[object_title].append(idx)
         
         if config.model.backbone_name == 'CLIP':
             if config.model.backbone_type == 'RN50x4':
@@ -394,7 +398,6 @@ class QueryVideoDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.annotations[idx]
         if sample['object_title'] == None:
-            import sys, random
             print(f"An error object_title is None : {sample}", file=sys.stdout, flush=True)
             sample = self.annotations[random.randint(0,len(self.annotations))]
         # video_path = self._get_video_path(sample)
@@ -439,6 +442,17 @@ class QueryVideoDataset(Dataset):
         query_canonical = self._get_query(sample, query_path)
         #if self.split != 'train' or (not torch.is_tensor(query)):
         query = query_canonical.clone()
+        if self.config.model.query_stack >= 2:
+            query_stack = [query]
+            num_stacks = self.config.model.query_stack - 1
+            if len(self.object_dict[query_text]) >= num_stacks:
+                sampled_list = random.sample(self.object_dict[query_text], num_stacks)
+            else:
+                sampled_list = random.choices(self.object_dict[query_text], k=num_stacks)
+            for new_idx in sampled_list:
+                query_path = self._get_query_path(self.annotations[new_idx])
+                query_stack.append(self._get_query(self.annotations[new_idx], query_path))
+            query = torch.stack(query_stack, dim=0)
 
         # load original query frame and the bbox
         query_frame, query_frame_bbox = self._get_query_frame(sample, query_path)
